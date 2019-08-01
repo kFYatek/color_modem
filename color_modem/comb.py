@@ -2,7 +2,7 @@
 import numpy
 
 
-class AbstractCombModem:
+class AbstractCombModem(object):
     BLANK_LINE = numpy.zeros(720)
 
     def __init__(self, backend):
@@ -42,7 +42,7 @@ class AbstractCombModem:
         return self.backend.decode_composite_level(value)
 
 
-class SimpleCombModem:
+class SimpleCombModem(object):
     BLANK_LINE = numpy.zeros(720)
 
     @staticmethod
@@ -99,4 +99,4 @@ class SimpleCombModem:
 
 class Simple3DCombModem(SimpleCombModem):
     def __init__(self, backend, avg=None):
-        super().__init__(backend, avg, True)
+        super(Simple3DCombModem, self).__init__(backend, avg, True)

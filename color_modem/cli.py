@@ -23,7 +23,7 @@ def modulate(modem, img, frame):
         output[720 * y:720 * (y + 1)] = modem.encode_composite_level(
             modem.modulate(frame, y, r[720 * y:720 * (y + 1)], g[720 * y:720 * (y + 1)], b[720 * y:720 * (y + 1)]))
 
-    return Image.frombytes('L', img.size, bytes(output))
+    return Image.frombytes('L', img.size, bytes(bytearray(output)))
 
 
 def demodulate(modem, img, frame):
@@ -48,7 +48,7 @@ def demodulate(modem, img, frame):
             output[3 * 720 * y:3 * 720 * (y + 1):3] = as_bytes(rLine)
             output[3 * 720 * y + 1:3 * 720 * (y + 1) + 1:3] = as_bytes(gLine)
             output[3 * 720 * y + 2:3 * 720 * (y + 1) + 2:3] = as_bytes(bLine)
-    return Image.frombytes('RGB', img.size, bytes(output))
+    return Image.frombytes('RGB', img.size, bytes(bytearray(output)))
 
 
 def main():

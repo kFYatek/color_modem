@@ -40,7 +40,7 @@ class NtscModem(AbstractQamColorModem):
     def __init__(self, variant, line_count=None):
         if line_count is None:
             line_count = NtscVariant.line_count(variant)
-        super().__init__(NtscVariant.fs(variant), 1300000.0, 3600000.0, line_count)
+        super(NtscModem, self).__init__(NtscVariant.fs(variant), 1300000.0, 3600000.0, line_count)
 
     @staticmethod
     def encode_yuv(r, g, b):
@@ -89,7 +89,7 @@ class NtscModem(AbstractQamColorModem):
 
 class NtscCombModem(comb.AbstractCombModem):
     def __init__(self, *args, **kwargs):
-        super().__init__(NtscModem(*args, **kwargs))
+        super(NtscCombModem, self).__init__(NtscModem(*args, **kwargs))
         self._factor = 0.5 / numpy.sin(self.backend.line_shift * 0.5)
 
     def demodulate_yuv_combed(self, frame, line, last, curr):

@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import enum
-
 import numpy
 
 from color_modem import qam, comb
@@ -40,9 +39,9 @@ class PalVariant(enum.Enum):
 
 
 class PalSModem(qam.AbstractQamColorModem):
-    def __init__(self, variant: PalVariant):
-        super().__init__(PalVariant.fs(variant), 1300000.0, PalVariant.bandwidth20db(variant),
-                         PalVariant.line_count(variant))
+    def __init__(self, variant):
+        super(PalSModem, self).__init__(PalVariant.fs(variant), 1300000.0, PalVariant.bandwidth20db(variant),
+                                        PalVariant.line_count(variant))
 
     @staticmethod
     def encode_yuv(r, g, b):
@@ -96,7 +95,7 @@ class PalSModem(qam.AbstractQamColorModem):
 
 class PalDModem(comb.AbstractCombModem):
     def __init__(self, *args, **kwargs):
-        super().__init__(PalSModem(*args, **kwargs))
+        super(PalDModem, self).__init__(PalSModem(*args, **kwargs))
         self._sin_factor = 0.5 * numpy.sin(0.5 * self.backend.line_shift)
         self._cos_factor = 0.5 * numpy.cos(0.5 * self.backend.line_shift)
 
@@ -165,8 +164,26 @@ class PalDModem(comb.AbstractCombModem):
 class Pal3DModem(PalDModem):
     BLANK_LINE = numpy.zeros(720)
 
-    def __init__(self, *args, use_sin=True, use_cos=True, avg=None, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *args, **kwargs):  # avg=None
+        if 'use_sin' in kwargs:
+            use_sin = kwargs['use_sin']
+            del kwargs['use_sin']
+        else:
+            use_sin = True
+
+        if 'use_cos' in kwargs:
+            use_cos = kwargs['use_cos']
+            del kwargs['use_cos']
+        else:
+            use_cos = True
+
+        if 'avg' in kwargs:
+            avg = kwargs['avg']
+            del kwargs['avg']
+        else:
+            avg = None
+
+        super(Pal3DModem, self).__init__(*args, **kwargs)
         self._last_diff = None
         self._last_demodulated = None
         self.demodulation_delay = 1
@@ -198,7 +215,7 @@ class Pal3DModem(PalDModem):
 
     def demodulate_yuv(self, frame, line, composite, strip_chroma=True, *args, **kwargs):
         if not (self._use_sin or self._use_cos):
-            return super().demodulate_yuv(frame, line, composite, strip_chroma, *args, **kwargs)
+            return super(Pal3DModem, self).demodulate_yuv(frame, line, composite, strip_chroma, *args, **kwargs)
 
         # (PAL(n+2) - PAL(n+1)) + (PAL(n+1) - PAL(n)) = 2*(U(x)*sin(LS/2) - V(x)*cos(LS/2))*cos(wt(x) + LS*(n + 3/2)) + 2*(U(x)*sin(LS/2) + V(x)*cos(LS/2))*cos(wt(x) + LS*(n + 1/2))
         # (PAL(n+2) - PAL(n+1)) - (PAL(n+1) - PAL(n)) = 2*(U(x)*sin(LS/2) - V(x)*cos(LS/2))*cos(wt(x) + LS*(n + 3/2)) - 2*(U(x)*sin(LS/2) + V(x)*cos(LS/2))*cos(wt(x) + LS*(n + 1/2))
@@ -209,7 +226,8 @@ class Pal3DModem(PalDModem):
 
         if frame != self._last_frame or line != self._last_line + 2:
             self._last_diff = None
-            self._last_demodulated = super().demodulate_yuv(frame, line, composite, strip_chroma=False, *args, **kwargs)
+            self._last_demodulated = super(Pal3DModem, self).demodulate_yuv(frame, line, composite, strip_chroma=False,
+                                                                            *args, **kwargs)
             return self._last_demodulated
 
         assert self._last_composite is not None

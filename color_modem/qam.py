@@ -6,7 +6,7 @@ def _convert_decibels(decibels):
     return 10.0 ** (decibels / 20.0)
 
 
-class QamColorModem:
+class QamColorModem(object):
     def __init__(self, carrier_phase_step, unmodulated_chroma_window, modulated_chroma_window):
         assert len(modulated_chroma_window) == 361
         self.carrier_phase_step = carrier_phase_step
@@ -72,7 +72,7 @@ class QamColorModem:
         return y, u, v
 
 
-class AbstractQamColorModem:
+class AbstractQamColorModem(object):
     @staticmethod
     def _generate_unmodulated_chroma_window(fs, bandwidth3db, bandwidth20db):
         window = numpy.zeros(361)
