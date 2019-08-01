@@ -192,7 +192,7 @@ class SecamModem:
         data = numpy.fft.irfft(cosine_fft) - 1.0j * numpy.fft.irfft(sine_fft)
         # now we have analytic FM at baseband
         phases = numpy.angle(data)
-        phase_shift = numpy.diff(phases, prepend=phases[0])
+        phase_shift = numpy.diff(numpy.concatenate((phases[0:1], phases)))
         phase_shift = (phase_shift + numpy.pi) % (2.0 * numpy.pi) - numpy.pi
         return fc + (0.5 * 13500000.0 / numpy.pi) * phase_shift
 

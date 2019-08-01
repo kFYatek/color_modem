@@ -7,10 +7,10 @@ from color_modem import qam, comb
 
 
 class PalVariant(enum.Enum):
-    PAL = enum.auto()
-    PAL_M = enum.auto()
-    PAL_N = enum.auto()
-    PAL_FakeM = enum.auto()
+    PAL = 1
+    PAL_M = 2
+    PAL_N = 3
+    PAL_FakeM = 4
 
     @staticmethod
     def fs(variant):

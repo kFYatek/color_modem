@@ -8,10 +8,10 @@ from color_modem.qam import AbstractQamColorModem
 
 
 class NtscVariant(enum.Enum):
-    NTSC = enum.auto()
-    NTSC_I = enum.auto()
-    NTSC443 = enum.auto()
-    NTSC361 = enum.auto()
+    NTSC = 1
+    NTSC_I = 2
+    NTSC443 = 3
+    NTSC361 = 4
 
     @staticmethod
     def fs(variant):
