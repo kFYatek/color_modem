@@ -6,13 +6,6 @@ def _convert_decibels(decibels):
     return 10.0 ** (decibels / 20.0)
 
 
-def unwrap(angle, period=2.0 * numpy.pi):
-    rem = int(angle / period)
-    if angle < 0.0:
-        rem -= 1
-    return angle - rem * period
-
-
 class QamColorModem:
     def __init__(self, carrier_phase_step, unmodulated_chroma_window, modulated_chroma_window):
         assert len(modulated_chroma_window) == 361
@@ -35,18 +28,15 @@ class QamColorModem:
 
     @staticmethod
     def _fft_limit2x(input):
-        return numpy.array(input[0:(len(input) // 2 + 1)])
+        return numpy.array(input[0:(len(input) // 2 + 1)], copy=False)
 
     def _modulate_chroma(self, start_phase, u, v):
         assert len(u) == len(v)
         u = numpy.fft.irfft(self._apply_window(numpy.fft.rfft(u), self._unmodulated_chroma_window))
         v = numpy.fft.irfft(self._apply_window(numpy.fft.rfft(v), self._unmodulated_chroma_window))
-        chroma = numpy.zeros(len(u))
-        phase = start_phase
-        for i in range(len(u)):
-            chroma[i] = numpy.sin(phase) * u[i] + numpy.cos(phase) * v[i]
-            phase = unwrap(phase + 2.0 * self.carrier_phase_step)
-        return chroma
+        phase = numpy.linspace(start=start_phase, stop=start_phase + len(u) * 2.0 * self.carrier_phase_step, num=len(u),
+                               endpoint=False) % (2.0 * numpy.pi)
+        return numpy.sin(phase) * u + numpy.cos(phase) * v
 
     def modulate(self, start_phase, y, u, v):
         assert len(y) == len(u) == len(v)
@@ -56,11 +46,8 @@ class QamColorModem:
 
     def _extract_chroma_fft(self, composite):
         fft = numpy.fft.rfft(composite)
-        peak_chroma_window = max(self._modulated_chroma_window)
-        chroma_fft = self._apply_window(fft, self._modulated_chroma_window)
-        for i in range(len(chroma_fft)):
-            chroma_fft[i] /= (peak_chroma_window * peak_chroma_window)
-        return chroma_fft
+        peak_chroma_window = numpy.max(self._modulated_chroma_window)
+        return self._apply_window(fft, self._modulated_chroma_window) / (peak_chroma_window * peak_chroma_window)
 
     def extract_chroma(self, composite):
         return numpy.fft.irfft(self._extract_chroma_fft(composite))
@@ -68,26 +55,20 @@ class QamColorModem:
     def demodulate(self, start_phase, composite, strip_chroma=True):
         chroma_fft = self._extract_chroma_fft(composite)
         chroma2x = numpy.fft.irfft(self._fft_expand2x(chroma_fft))
-        u2x = numpy.zeros(len(chroma2x))
-        v2x = numpy.zeros(len(chroma2x))
-        phase = start_phase
-        for i in range(len(chroma2x)):
-            u2x[i] = 2.0 * numpy.sin(phase) * chroma2x[i]
-            v2x[i] = 2.0 * numpy.cos(phase) * chroma2x[i]
-            phase = unwrap(phase + self.carrier_phase_step)
+        phase = numpy.linspace(start=start_phase, stop=start_phase + len(chroma2x) * self.carrier_phase_step,
+                               num=len(chroma2x), endpoint=False) % (2.0 * numpy.pi)
+        u2x = 2.0 * numpy.sin(phase) * chroma2x
+        v2x = 2.0 * numpy.cos(phase) * chroma2x
         u2x_fft = numpy.fft.rfft(u2x)
         v2x_fft = numpy.fft.rfft(v2x)
         cutoff = int(360.0 * 2.0 * self.carrier_phase_step / numpy.pi)
-        for i in range(cutoff, len(chroma_fft)):
-            u2x_fft[i] = 0.0
-            v2x_fft[i] = 0.0
+        u2x_fft[cutoff:] = 0.0
+        v2x_fft[cutoff:] = 0.0
         u = numpy.fft.irfft(self._fft_limit2x(u2x_fft))
         v = numpy.fft.irfft(self._fft_limit2x(v2x_fft))
-        y = numpy.array(composite)
+        y = composite
         if strip_chroma:
-            new_chroma = self._modulate_chroma(start_phase, u, v)
-            for i in range(len(y)):
-                y[i] -= new_chroma[i]
+            y = y - self._modulate_chroma(start_phase, u, v)
         return y, u, v
 
 
@@ -133,11 +114,11 @@ class AbstractQamColorModem:
         self.qam = QamColorModem(numpy.pi * fs / 13500000.0,
                                  self._generate_unmodulated_chroma_window(fs, bandwidth3db, bandwidth20db),
                                  self._generate_modulated_chroma_window(fs, bandwidth3db, bandwidth20db))
-        line_shift_by_pi = unwrap(2.0 * active_pixels * fs / 13500000.0, 2.0)
+        line_shift_by_pi = (2.0 * active_pixels * fs / 13500000.0) % 2.0
         self.line_shift = numpy.pi * line_shift_by_pi
-        odd_numbered_digital_line_shift_by_pi = unwrap(line_shift_by_pi * total_first_field_lines, 2.0)
+        odd_numbered_digital_line_shift_by_pi = (line_shift_by_pi * total_first_field_lines) % 2.0
         self._odd_numbered_digital_line_shift = numpy.pi * odd_numbered_digital_line_shift_by_pi
-        frame_shift_by_pi = unwrap(line_shift_by_pi * lines, 2.0)
+        frame_shift_by_pi = (line_shift_by_pi * lines) % 2.0
         self._frame_shift = numpy.pi * frame_shift_by_pi
 
     def calculate_start_phase(self, frame, line):
@@ -145,10 +126,10 @@ class AbstractQamColorModem:
             frame %= 2
         else:
             frame %= 4
-        frame_shift = unwrap(frame * self._frame_shift)
+        frame_shift = (frame * self._frame_shift) % (2.0 * numpy.pi)
         field_shift = (line % 2) * self._odd_numbered_digital_line_shift
-        line_shift = unwrap((line // 2) * self.line_shift)
-        return unwrap(frame_shift + field_shift + line_shift)
+        line_shift = ((line // 2) * self.line_shift) % (2.0 * numpy.pi)
+        return (frame_shift + field_shift + line_shift) % (2.0 * numpy.pi)
 
     def modulate(self, frame, line, r, g, b):
         return self.modulate_yuv(frame, line, *self.encode_yuv(r, g, b))

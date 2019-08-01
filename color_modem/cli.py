@@ -18,27 +18,23 @@ def modulate(modem, img, frame):
     r = bytearray(img.getdata(0))
     g = bytearray(img.getdata(1))
     b = bytearray(img.getdata(2))
-    output = bytearray(720 * img.height)
+    output = numpy.zeros(720 * img.height, dtype=numpy.uint8)
     for y in itertools.chain(range(0, img.height, 2), range(1, img.height, 2)):
-        output[720 * y:720 * (y + 1)] = (modem.encode_composite_level(value) for value in
-                                         modem.modulate(frame, y, r[720 * y:720 * (y + 1)], g[720 * y:720 * (y + 1)],
-                                                        b[720 * y:720 * (y + 1)]))
+        output[720 * y:720 * (y + 1)] = modem.encode_composite_level(
+            modem.modulate(frame, y, r[720 * y:720 * (y + 1)], g[720 * y:720 * (y + 1)], b[720 * y:720 * (y + 1)]))
+
     return Image.frombytes('L', img.size, bytes(output))
 
 
 def demodulate(modem, img, frame):
     def as_bytes(array):
-        return (int(max(min(val, 255.0), 0.0) + 0.5) for val in array)
+        return numpy.uint8(numpy.rint(numpy.maximum(numpy.minimum(array, 255.0), 0.0)))
 
     assert img.width == 720
     if img.mode != 'L':
         img = img.convert('L')
-    composite_data = img.getdata()
-    composite = numpy.zeros(len(composite_data))
-    for i in range(len(composite_data)):
-        composite[i] = modem.decode_composite_level(composite_data[i])
-    del composite_data
-    output = bytearray(720 * img.height * 3)
+    composite = modem.decode_composite_level(numpy.array(img.getdata()))
+    output = numpy.zeros(720 * img.height * 3, dtype=numpy.uint8)
     demodulation_delay = getattr(modem, 'demodulation_delay', 0)
     for field in range(2):
         for y in range(field, 2 * demodulation_delay, 2):

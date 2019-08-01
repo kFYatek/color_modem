@@ -69,18 +69,14 @@ class PalSModem(qam.AbstractQamColorModem):
     def modulate_yuv(self, frame, line, y, u, v):
         start_phase = self.calculate_start_phase(frame, line)
         if self.is_alternate_line(frame, line):
-            v = numpy.array(v)
-            for i in range(len(v)):
-                v[i] = -v[i]
+            v = -numpy.array(v, copy=False)
         return self.qam.modulate(start_phase, y, u, v)
 
     def demodulate_yuv(self, frame, line, *args, **kwargs):
         start_phase = self.calculate_start_phase(frame, line)
         y, u, v = self.qam.demodulate(start_phase, *args, **kwargs)
         if self.is_alternate_line(frame, line):
-            v = numpy.array(v)
-            for i in range(len(v)):
-                v[i] = -v[i]
+            v = -numpy.array(v, copy=False)
         return y, u, v
 
     @staticmethod
@@ -90,8 +86,8 @@ class PalSModem(qam.AbstractQamColorModem):
         # black level: 0
         # min excursion: -233/700
         adjusted = (value * 700.0 + 59415.0) / 1166.0
-        clamped = max(min(adjusted, 255.0), 0.0)
-        return int(clamped + 0.5)
+        clamped = numpy.maximum(numpy.minimum(adjusted, 255.0), 0.0)
+        return numpy.uint8(numpy.rint(clamped))
 
     @staticmethod
     def decode_composite_level(value):
@@ -106,14 +102,12 @@ class PalDModem(comb.AbstractCombModem):
 
     def _demodulate_am(self, data, start_phase):
         data2x = numpy.fft.irfft(qam.QamColorModem._fft_expand2x(numpy.fft.rfft(data)))
-        phase = start_phase
-        for i in range(len(data2x)):
-            data2x[i] *= 2.0 * numpy.sin(phase)
-            phase = qam.unwrap(phase + self.backend.qam.carrier_phase_step)
+        phase = numpy.linspace(start=start_phase, stop=start_phase + len(data2x) * self.backend.qam.carrier_phase_step,
+                               num=len(data2x), endpoint=False) % (2.0 * numpy.pi)
+        data2x *= 2.0 * numpy.sin(phase)
         fft = numpy.fft.rfft(data2x)
         cutoff = int(360.0 * 2.0 * self.backend.qam.carrier_phase_step / numpy.pi)
-        for i in range(cutoff, len(fft)):
-            fft[i] = 0.0
+        fft[cutoff:] = 0.0
         return numpy.fft.irfft(qam.QamColorModem._fft_limit2x(fft))
 
     def demodulate_yuv_combed(self, frame, line, last, curr):
@@ -158,31 +152,18 @@ class PalDModem(comb.AbstractCombModem):
         diff = self.backend.qam.extract_chroma(curr - last)
 
         sumsig = self._demodulate_am(sumsig, diff_phase)
-        diff = self._demodulate_am(diff, qam.unwrap(diff_phase + 0.5 * numpy.pi))
+        diff = self._demodulate_am(diff, (diff_phase + 0.5 * numpy.pi) % (2.0 * numpy.pi))
 
-        u = numpy.zeros(len(curr))
-        v = numpy.zeros(len(curr))
-        for i in range(len(curr)):
-            u[i] = diff[i] * self._sin_factor + sumsig[i] * self._cos_factor
-            v[i] = diff[i] * self._cos_factor - sumsig[i] * self._sin_factor
+        u = diff * self._sin_factor + sumsig * self._cos_factor
+        v = diff * self._cos_factor - sumsig * self._sin_factor
         if self.backend.is_alternate_line(frame, line):
-            for i in range(len(v)):
-                v[i] = -v[i]
+            v *= -1.0
 
         return curr, u, v
 
 
 class Pal3DModem(PalDModem):
     BLANK_LINE = numpy.zeros(720)
-
-    @staticmethod
-    def _minavg(val1, val2):
-        sign1 = 1.0 if val1 >= 0.0 else -1.0
-        sign2 = 1.0 if val2 >= 0.0 else -1.0
-        if sign1 != sign2:
-            return 0.0
-        else:
-            return sign1 * min(abs(val1), abs(val2))
 
     def __init__(self, *args, use_sin=True, use_cos=True, avg=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -213,7 +194,7 @@ class Pal3DModem(PalDModem):
         if avg is not None:
             self._avg = avg
         else:
-            self._avg = self._minavg
+            self._avg = lambda a, b: 0.5 * (a + b)
 
     def demodulate_yuv(self, frame, line, composite, strip_chroma=True, *args, **kwargs):
         if not (self._use_sin or self._use_cos):
@@ -245,11 +226,8 @@ class Pal3DModem(PalDModem):
             diffsig = self.backend.qam.demodulate(start_phase, diffsig, strip_chroma=False)
 
             if self._use_sin and self._use_cos:
-                u = numpy.zeros(len(composite))
-                v = numpy.zeros(len(composite))
-                for i in range(len(composite)):
-                    u[i] = self._avg(sumsig[2][i] * self._sin_sum_factor, diffsig[1][i] * self._cos_u_factor)
-                    v[i] = self._avg(sumsig[1][i] * self._sin_sum_factor, diffsig[2][i] * self._cos_v_factor)
+                u = self._avg(sumsig[2] * self._sin_sum_factor, diffsig[1] * self._cos_u_factor)
+                v = self._avg(sumsig[1] * self._sin_sum_factor, diffsig[2] * self._cos_v_factor)
             elif self._use_sin:
                 u = self._sin_sum_factor * sumsig[2]
                 v = self._sin_sum_factor * sumsig[1]
@@ -258,16 +236,12 @@ class Pal3DModem(PalDModem):
                 v = self._cos_v_factor * diffsig[2]
 
             if self.backend.is_alternate_line(frame, line - 2):
-                for i in range(len(v)):
-                    v[i] = -v[i]
+                v *= -1.0
 
             y = self._last_composite
 
         if strip_chroma:
-            y = numpy.array(y)
-            new_chroma = self.backend.modulate_yuv(frame, line - 2, self.BLANK_LINE, u, v)
-            for i in range(len(y)):
-                y[i] -= new_chroma[i]
+            y = y - self.backend.modulate_yuv(frame, line - 2, self.BLANK_LINE, u, v)
 
         self._last_frame = frame
         self._last_line = line

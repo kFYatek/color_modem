@@ -23,10 +23,7 @@ class AbstractCombModem:
         else:
             y, u, v = self.demodulate_yuv_combed(frame, line, self._last_composite, composite, *args, **kwargs)
             if strip_chroma:
-                y = numpy.array(y)
-                new_chroma = self.backend.modulate_yuv(frame, line, self.BLANK_LINE, u, v)
-                for i in range(len(y)):
-                    y[i] -= new_chroma[i]
+                y = y - self.backend.modulate_yuv(frame, line, self.BLANK_LINE, u, v)
         self._last_frame = frame
         self._last_line = line
         self._last_composite = numpy.array(composite)
@@ -50,12 +47,8 @@ class SimpleCombModem:
 
     @staticmethod
     def _minavg(val1, val2):
-        sign1 = 1.0 if val1 >= 0.0 else -1.0
-        sign2 = 1.0 if val2 >= 0.0 else -1.0
-        if sign1 != sign2:
-            return 0.0
-        else:
-            return sign1 * min(abs(val1), abs(val2))
+        sign = (1.0 - numpy.signbit(val1)) - numpy.signbit(val2)
+        return sign * numpy.minimum(numpy.abs(val1), numpy.abs(val2))
 
     def __init__(self, backend, avg=None, delay=False):
         self.backend = backend
@@ -82,16 +75,10 @@ class SimpleCombModem:
         else:
             curr = self.backend.demodulate_yuv(frame, line, composite, strip_chroma=False, *args, **kwargs)
             y = self._last_demodulated[0] if self.demodulation_delay else curr[0]
-            u = numpy.zeros(len(y))
-            v = numpy.zeros(len(y))
-            for i in range(len(y)):
-                u[i] = self._avg(self._last_demodulated[1][i], curr[1][i])
-                v[i] = self._avg(self._last_demodulated[2][i], curr[2][i])
+            u = self._avg(self._last_demodulated[1], curr[1])
+            v = self._avg(self._last_demodulated[2], curr[2])
             if strip_chroma:
-                y = numpy.array(y)
-                new_chroma = self.backend.modulate_yuv(frame, line - 2 * self.demodulation_delay, self.BLANK_LINE, u, v)
-                for i in range(len(y)):
-                    y[i] -= new_chroma[i]
+                y = y - self.backend.modulate_yuv(frame, line - 2 * self.demodulation_delay, self.BLANK_LINE, u, v)
         self._last_frame = frame
         self._last_line = line
         self._last_demodulated = curr

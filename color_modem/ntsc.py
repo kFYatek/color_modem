@@ -79,8 +79,8 @@ class NtscModem(AbstractQamColorModem):
         # black level: 0
         # min excursion: -164/714
         adjusted = (value * 714.0 + 41820.0) / 1100.0
-        clamped = max(min(adjusted, 255.0), 0.0)
-        return int(clamped + 0.5)
+        clamped = numpy.maximum(numpy.minimum(adjusted, 255.0), 0.0)
+        return numpy.uint8(numpy.rint(clamped))
 
     @staticmethod
     def decode_composite_level(value):
@@ -108,7 +108,6 @@ class NtscCombModem(comb.AbstractCombModem):
 
         diff = curr - last
         _, v, u = self.backend.qam.demodulate(diff_phase, diff, strip_chroma=False)
-        for i in range(len(v)):
-            u[i] *= self._factor
-            v[i] *= -self._factor
+        u *= self._factor
+        v *= -self._factor
         return curr, u, v
