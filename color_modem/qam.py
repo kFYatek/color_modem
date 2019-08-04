@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy
+import scipy.signal
 
 
 def _convert_decibels(decibels):
@@ -7,33 +8,60 @@ def _convert_decibels(decibels):
 
 
 class QamColorModem(object):
-    def __init__(self, carrier_phase_step, unmodulated_chroma_window, modulated_chroma_window):
-        assert len(modulated_chroma_window) == 361
-        self.carrier_phase_step = carrier_phase_step
-        self._unmodulated_chroma_window = unmodulated_chroma_window
-        self._modulated_chroma_window = modulated_chroma_window
+    @staticmethod
+    def _average_shift(b, a):
+        test_input = numpy.zeros(len(b) + len(a))
+        test_input[0] = 1.0
+        test_output = scipy.signal.lfilter(b, a, test_input)
+        shift = 0
+        for i in range(1, len(test_output)):
+            if abs(test_output[i]) > abs(test_output[shift]):
+                shift = i
+        return shift
 
     @staticmethod
-    def _apply_window(fft, window):
-        assert len(fft) == len(window)
-        fft = numpy.array(fft, copy=False)
-        window = numpy.array(window, copy=False)
-        return fft * window
+    def _precorrect_lowpass(wp, ws, gpass, gstop):
+        b, a = scipy.signal.iirdesign(wp, ws, gpass, gstop, ftype='butter')
+        shift = QamColorModem._average_shift(b, a)
+        return lambda x: scipy.signal.lfilter(b, a, numpy.concatenate((x, numpy.zeros(shift))))[shift:]
 
     @staticmethod
-    def _fft_expand2x(input):
-        result = numpy.zeros(2 * len(input) - 1, dtype=input.dtype)
-        result[0:len(input)] = input
-        return result
+    def _extract_chroma2x_design(wc, wp, ws, gpass, gstop):
+        b, a = scipy.signal.iirdesign([wc - wp, wc + wp], [wc - ws, wc + ws], gpass, gstop, ftype='butter')
+        shift = QamColorModem._average_shift(b, a)
+        phase_shift = (numpy.angle(scipy.signal.freqz(b, a, worN=[wc], fs=2.0)[1][0]) + shift * numpy.pi * wc) % (
+                2.0 * numpy.pi)
+        filter = lambda x: scipy.signal.lfilter(b, a, numpy.concatenate((x, numpy.zeros(shift))))[shift:]
+        return filter, phase_shift
 
     @staticmethod
-    def _fft_limit2x(input):
-        return numpy.array(input[0:(len(input) // 2 + 1)], copy=False)
+    def _remove_chroma2x_design(wc, wp, ws, gpass, gstop):
+        newpass = -(20.0 * numpy.log10(1.0 - 10.0 ** (-gstop / 20.0)))
+        newstop = -(20.0 * numpy.log10(1.0 - 10.0 ** (-gpass / 20.0)))
+        b, a = scipy.signal.iirdesign([wc - ws, wc + ws], [wc - wp, wc + wp], newpass, newstop, ftype='butter')
+        shift = QamColorModem._average_shift(b, a)
+        return lambda x: scipy.signal.lfilter(b, a, numpy.concatenate((x, numpy.zeros(shift))))[shift:]
+
+    @staticmethod
+    def _demod_lowpass_design(wc, ws):
+        b, a = scipy.signal.iirfilter(6, 2.0 * wc - ws, rs=48.0, btype='lowpass', ftype='cheby2')
+        shift = QamColorModem._average_shift(b, a)
+        return lambda x: scipy.signal.lfilter(b, a, numpy.concatenate((x, numpy.zeros(shift))))[shift:]
+
+    def __init__(self, wc, wp, ws, gpass, gstop):
+        self.carrier_phase_step = 0.5 * numpy.pi * wc
+
+        self._chroma_precorrect_lowpass = QamColorModem._precorrect_lowpass(wp, ws, gpass, gstop)
+        self._extract_chroma2x, self._extract_phase_shift = QamColorModem._extract_chroma2x_design(0.5 * wc, 0.5 * wp,
+                                                                                                   0.5 * ws, gpass,
+                                                                                                   gstop)
+        self._remove_chroma2x = QamColorModem._remove_chroma2x_design(0.5 * wc, 0.5 * wp, 0.5 * ws, gpass, gstop)
+        self._demod_lowpass = QamColorModem._demod_lowpass_design(0.5 * wc, 0.5 * ws)
 
     def _modulate_chroma(self, start_phase, u, v):
         assert len(u) == len(v)
-        u = numpy.fft.irfft(self._apply_window(numpy.fft.rfft(u), self._unmodulated_chroma_window))
-        v = numpy.fft.irfft(self._apply_window(numpy.fft.rfft(v), self._unmodulated_chroma_window))
+        u = self._chroma_precorrect_lowpass(u)
+        v = self._chroma_precorrect_lowpass(v)
         phase = numpy.linspace(start=start_phase, stop=start_phase + len(u) * 2.0 * self.carrier_phase_step, num=len(u),
                                endpoint=False) % (2.0 * numpy.pi)
         return numpy.sin(phase) * u + numpy.cos(phase) * v
@@ -44,31 +72,26 @@ class QamColorModem(object):
         chroma = self._modulate_chroma(start_phase, u, v)
         return y + chroma
 
-    def _extract_chroma_fft(self, composite):
-        fft = numpy.fft.rfft(composite)
-        peak_chroma_window = numpy.max(self._modulated_chroma_window)
-        return self._apply_window(fft, self._modulated_chroma_window) / (peak_chroma_window * peak_chroma_window)
-
     def extract_chroma(self, composite):
-        return numpy.fft.irfft(self._extract_chroma_fft(composite))
+        composite2x = scipy.signal.resample_poly(composite, up=2, down=1)
+        chroma2x = self._extract_chroma2x(composite2x)
+        return scipy.signal.resample_poly(chroma2x, up=1, down=2)
 
     def demodulate(self, start_phase, composite, strip_chroma=True):
-        chroma_fft = self._extract_chroma_fft(composite)
-        chroma2x = numpy.fft.irfft(self._fft_expand2x(chroma_fft))
-        phase = numpy.linspace(start=start_phase, stop=start_phase + len(chroma2x) * self.carrier_phase_step,
+        shifted_phase = start_phase + self._extract_phase_shift
+        composite2x = scipy.signal.resample_poly(composite, up=2, down=1)
+        chroma2x = self._extract_chroma2x(composite2x)
+        phase = numpy.linspace(start=shifted_phase, stop=shifted_phase + len(chroma2x) * self.carrier_phase_step,
                                num=len(chroma2x), endpoint=False) % (2.0 * numpy.pi)
         u2x = 2.0 * numpy.sin(phase) * chroma2x
         v2x = 2.0 * numpy.cos(phase) * chroma2x
-        u2x_fft = numpy.fft.rfft(u2x)
-        v2x_fft = numpy.fft.rfft(v2x)
-        cutoff = int(360.0 * 2.0 * self.carrier_phase_step / numpy.pi)
-        u2x_fft[cutoff:] = 0.0
-        v2x_fft[cutoff:] = 0.0
-        u = numpy.fft.irfft(self._fft_limit2x(u2x_fft))
-        v = numpy.fft.irfft(self._fft_limit2x(v2x_fft))
+        u2x = self._demod_lowpass(u2x)
+        v2x = self._demod_lowpass(v2x)
+        u = scipy.signal.resample_poly(u2x, up=1, down=2)
+        v = scipy.signal.resample_poly(v2x, up=1, down=2)
         y = composite
         if strip_chroma:
-            y = y - self._modulate_chroma(start_phase, u, v)
+            y = scipy.signal.resample_poly(self._remove_chroma2x(composite2x), up=1, down=2)
         return y, u, v
 
 
@@ -111,9 +134,8 @@ class AbstractQamColorModem(object):
         else:
             raise RuntimeError('%d is not a supported line count' % (lines,))
         self.line_count = lines
-        self.qam = QamColorModem(numpy.pi * fs / 13500000.0,
-                                 self._generate_unmodulated_chroma_window(fs, bandwidth3db, bandwidth20db),
-                                 self._generate_modulated_chroma_window(fs, bandwidth3db, bandwidth20db))
+        self.qam = QamColorModem(2.0 * fs / 13500000.0, 2.0 * bandwidth3db / 13500000.0,
+                                 2.0 * bandwidth20db / 13500000.0, 3.0, 20.0)
         line_shift_by_pi = (2.0 * active_pixels * fs / 13500000.0) % 2.0
         self.line_shift = numpy.pi * line_shift_by_pi
         odd_numbered_digital_line_shift_by_pi = (line_shift_by_pi * total_first_field_lines) % 2.0

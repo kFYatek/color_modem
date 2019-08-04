@@ -3,7 +3,7 @@
 import numpy
 import scipy.signal
 
-from color_modem import qam
+from color_modem.qam import QamColorModem
 
 
 class SecamModem:
@@ -19,11 +19,19 @@ class SecamModem:
         else:
             self._start_phase_inversions = [False, False, False, True, True, True]
         self._chroma_demod_comb = self._feedback_comb(0.8275, 13.5 / 4.286, 3)
-        self._chroma_precorrect_lowpass = self._lanczos_lowpass(1, 1.7 / 13.5)
+
+        b, a = scipy.signal.iirdesign(wp=2.0 * 1300.0 / 13500.0, ws=2.0 * 3500.0 / 13500.0, gpass=3.0, gstop=30.0,
+                                      ftype='butter')
+        shift = QamColorModem._average_shift(b, a)
+        self._chroma_precorrect_lowpass = lambda x: scipy.signal.lfilter(b, a, numpy.concatenate(
+            (x, numpy.zeros(shift))))[shift:]
+
         self._chroma_demod_dr_low_filter = SecamModem._lanczos_lowpass(4, (self.DR_FC - self.DR_DEV) / 13500000.0)
         self._chroma_demod_dr_high_filter = SecamModem._lanczos_lowpass(4, (self.DR_FC + self.DR_DEV) / 13500000.0)
         self._chroma_demod_db_low_filter = SecamModem._lanczos_lowpass(5, (self.DB_FC - self.DB_DEV) / 13500000.0)
         self._chroma_demod_db_high_filter = SecamModem._lanczos_lowpass(5, (self.DB_FC + self.DB_DEV) / 13500000.0)
+        self._chroma_demod_dr = SecamModem._fm_decoder(self.DR_FC, self.DR_DEV)
+        self._chroma_demod_db = SecamModem._fm_decoder(self.DB_FC, self.DB_DEV)
         self._last_frame = -1
         self._last_line = -1
         self._last_dr = SecamModem.BLANK_LINE
@@ -174,27 +182,28 @@ class SecamModem:
         return luma + chroma
 
     @staticmethod
-    def _decode_fm(data, fc, dev):
-        # Assuming the signal is already filtered
-        data2x = numpy.fft.irfft(qam.QamColorModem._fft_expand2x(numpy.fft.rfft(data)))
-        phase = numpy.linspace(start=0.0, stop=len(data2x) * numpy.pi * fc / 13500000.0, num=len(data2x),
-                               endpoint=False)
-        cosine2x = data2x * numpy.cos(phase)
-        sine2x = data2x * numpy.sin(phase)
-        # filter out the high frequency components
-        cosine_fft = numpy.fft.rfft(cosine2x)
-        sine_fft = numpy.fft.rfft(sine2x)
-        cutoff = int(numpy.ceil(fc * (len(cosine_fft) - 1) / 13500000.0))
-        cosine_fft[cutoff:] = 0.0
-        sine_fft[cutoff:] = 0.0
-        cosine_fft = qam.QamColorModem._fft_limit2x(cosine_fft)
-        sine_fft = qam.QamColorModem._fft_limit2x(sine_fft)
-        data = numpy.fft.irfft(cosine_fft) - 1.0j * numpy.fft.irfft(sine_fft)
-        # now we have analytic FM at baseband
-        phases = numpy.angle(data)
-        phase_shift = numpy.diff(numpy.concatenate((phases[0:1], phases)))
-        phase_shift = (phase_shift + numpy.pi) % (2.0 * numpy.pi) - numpy.pi
-        return fc + (0.5 * 13500000.0 / numpy.pi) * phase_shift
+    def _fm_decoder(fc, dev):
+        b, a = scipy.signal.iirfilter(6, (2.0 * fc - dev) / 13500000.0, rs=48.0, btype='lowpass', ftype='cheby2')
+
+        def decode(data):
+            # Assuming the signal is already filtered
+            data2x = scipy.signal.resample_poly(data, up=2, down=1)
+            phase = numpy.linspace(start=0.0, stop=len(data2x) * numpy.pi * fc / 13500000.0, num=len(data2x),
+                                   endpoint=False)
+            cosine2x = data2x * numpy.cos(phase)
+            sine2x = data2x * numpy.sin(phase)
+            # filter out the high frequency components
+            cosine2x = scipy.signal.lfilter(b, a, cosine2x)
+            sine2x = scipy.signal.lfilter(b, a, sine2x)
+            data = scipy.signal.resample_poly(cosine2x, up=1, down=2) - 1.0j * scipy.signal.resample_poly(sine2x, up=1,
+                                                                                                          down=2)
+            # now we have analytic FM at baseband
+            phases = numpy.angle(data)
+            phase_shift = numpy.diff(numpy.concatenate((phases[0:1], phases)))
+            phase_shift = (phase_shift + numpy.pi) % (2.0 * numpy.pi) - numpy.pi
+            return fc + (0.5 * 13500000.0 / numpy.pi) * phase_shift
+
+        return decode
 
     def demodulate(self, frame, line, composite):
         assert len(composite) == 720
@@ -207,14 +216,12 @@ class SecamModem:
         if not SecamModem._is_alternate_line(frame, line):
             chroma_low_filter = self._chroma_demod_dr_low_filter
             chroma_high_filter = self._chroma_demod_dr_high_filter
-            chroma_fc = self.DR_FC
-            chroma_dev = self.DR_DEV
+            chroma_demod = self._chroma_demod_dr
             chroma_divider = 0.419
         else:
             chroma_low_filter = self._chroma_demod_db_low_filter
             chroma_high_filter = self._chroma_demod_db_high_filter
-            chroma_fc = self.DB_FC
-            chroma_dev = self.DB_DEV
+            chroma_demod = self._chroma_demod_db
             chroma_divider = 0.432
 
         # TODO: Better luma filtering
@@ -226,7 +233,7 @@ class SecamModem:
         chroma = self._chroma_demod_comb(chroma)
         chroma = SecamModem._highpass(chroma, 0.5 * 4.286 / 13.5)
 
-        frequencies = SecamModem._decode_fm(chroma, chroma_fc, chroma_dev)
+        frequencies = chroma_demod(chroma)
         if not SecamModem._is_alternate_line(frame, line):
             dr = self._demodulate_dr(frequencies)
             self._last_dr = dr

@@ -62,7 +62,7 @@ def main():
 
     #### PAL
     # best quality 3D comb filter
-    # modem = Pal3DModem(PalVariant.PAL, avg=lambda a, b: 0.5 * (a + b))
+    # modem = Pal3DModem(PalVariant.PAL)
     # standard PAL-D (2D comb filter)
     # modem = PalDModem(PalVariant.PAL)
     # simple PAL-S (bandpass filtering)

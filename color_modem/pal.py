@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import enum
 import numpy
+import scipy.signal
 
 from color_modem import qam, comb
 
@@ -96,18 +97,18 @@ class PalSModem(qam.AbstractQamColorModem):
 class PalDModem(comb.AbstractCombModem):
     def __init__(self, *args, **kwargs):
         super(PalDModem, self).__init__(PalSModem(*args, **kwargs))
-        self._sin_factor = 0.5 * numpy.sin(0.5 * self.backend.line_shift)
-        self._cos_factor = 0.5 * numpy.cos(0.5 * self.backend.line_shift)
+        self._sin_factor = numpy.sin(0.5 * self.backend.line_shift)
+        self._cos_factor = numpy.cos(0.5 * self.backend.line_shift)
+        self._filter = scipy.signal.iirfilter(6, self.backend.qam.carrier_phase_step / numpy.pi - 1300.0 / 13500.0,
+                                              rs=48.0, btype='lowpass', ftype='cheby2')
 
     def _demodulate_am(self, data, start_phase):
-        data2x = numpy.fft.irfft(qam.QamColorModem._fft_expand2x(numpy.fft.rfft(data)))
+        data2x = scipy.signal.resample_poly(data, up=2, down=1)
         phase = numpy.linspace(start=start_phase, stop=start_phase + len(data2x) * self.backend.qam.carrier_phase_step,
                                num=len(data2x), endpoint=False) % (2.0 * numpy.pi)
-        data2x *= 2.0 * numpy.sin(phase)
-        fft = numpy.fft.rfft(data2x)
-        cutoff = int(360.0 * 2.0 * self.backend.qam.carrier_phase_step / numpy.pi)
-        fft[cutoff:] = 0.0
-        return numpy.fft.irfft(qam.QamColorModem._fft_limit2x(fft))
+        data2x *= numpy.sin(phase)
+        data2x = scipy.signal.lfilter(*self._filter, x=numpy.concatenate((data2x, numpy.zeros(6))))
+        return scipy.signal.resample_poly(data2x[6:], up=1, down=2)
 
     def demodulate_yuv_combed(self, frame, line, last, curr):
         # PAL-BDGHIK: LS = %pi*1879/1250 ~= %pi*3/2
