@@ -6,6 +6,7 @@ import numpy
 from PIL import Image
 
 from color_modem.comb import Simple3DCombModem
+from color_modem.niir import NiirModem
 from color_modem.ntsc import NtscCombModem, NtscVariant, NtscModem
 from color_modem.pal import Pal3DModem, PalVariant, PalDModem, PalSModem
 from color_modem.secam import SecamModem
@@ -70,6 +71,9 @@ def main():
 
     #### SECAM
     modem = SecamModem()
+
+    #### NIIR (SECAM IV)
+    # modem = NiirModem()
 
     img = Image.open(sys.argv[1])
     img = modulate(modem, img, 0)

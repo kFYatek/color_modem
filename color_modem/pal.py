@@ -61,8 +61,8 @@ class PalSModem(qam.AbstractQamColorModem):
         y = numpy.array(y, copy=False)
         u = numpy.array(u, copy=False)
         v = numpy.array(v, copy=False)
-        r = y + 1.140250855188141 * v - 2.734044841750434e-17 * u
-        g = y - 0.5808092090310977 * v - 0.3939307027516405 * u
+        r = y + 1.140250855188141 * v
+        g = y - 0.5808092090310976 * v - 0.3939307027516405 * u
         b = y + 2.028397565922921 * u
         return r, g, b
 
@@ -95,20 +95,26 @@ class PalSModem(qam.AbstractQamColorModem):
 
 
 class PalDModem(comb.AbstractCombModem):
+    @staticmethod
+    def _filter_design(carrier_phase_step):
+        b, a = scipy.signal.iirfilter(6, carrier_phase_step / numpy.pi - 1300.0 / 13500.0, rs=48.0, btype='lowpass',
+                                      ftype='cheby2')
+        shift = int(numpy.round(scipy.signal.group_delay((b, a), [0.0])[1]))
+        return lambda x: scipy.signal.lfilter(b, a, numpy.concatenate((x, numpy.zeros(shift))))[shift:]
+
     def __init__(self, *args, **kwargs):
         super(PalDModem, self).__init__(PalSModem(*args, **kwargs))
         self._sin_factor = numpy.sin(0.5 * self.backend.line_shift)
         self._cos_factor = numpy.cos(0.5 * self.backend.line_shift)
-        self._filter = scipy.signal.iirfilter(6, self.backend.qam.carrier_phase_step / numpy.pi - 1300.0 / 13500.0,
-                                              rs=48.0, btype='lowpass', ftype='cheby2')
+        self._filter = PalDModem._filter_design(self.backend.qam.carrier_phase_step)
 
     def _demodulate_am(self, data, start_phase):
         data2x = scipy.signal.resample_poly(data, up=2, down=1)
         phase = numpy.linspace(start=start_phase, stop=start_phase + len(data2x) * self.backend.qam.carrier_phase_step,
                                num=len(data2x), endpoint=False) % (2.0 * numpy.pi)
         data2x *= numpy.sin(phase)
-        data2x = scipy.signal.lfilter(*self._filter, x=numpy.concatenate((data2x, numpy.zeros(6))))
-        return scipy.signal.resample_poly(data2x[6:], up=1, down=2)
+        data2x = self._filter(data2x)
+        return scipy.signal.resample_poly(data2x, up=1, down=2)
 
     def demodulate_yuv_combed(self, frame, line, last, curr):
         # PAL-BDGHIK: LS = %pi*1879/1250 ~= %pi*3/2
@@ -144,9 +150,8 @@ class PalDModem(comb.AbstractCombModem):
         last = numpy.array(last, copy=False)
         curr = numpy.array(curr, copy=False)
 
-        diff_phase = self.backend.calculate_start_phase(frame, line) - 0.5 * self.backend.line_shift
-        if diff_phase < 0.0:
-            diff_phase += 2.0 * numpy.pi
+        diff_phase = (self.backend.calculate_start_phase(frame, line) +
+                      self.backend.qam.extract_chroma_phase_shift - 0.5 * self.backend.line_shift) % (2.0 * numpy.pi)
 
         sumsig = self.backend.qam.extract_chroma(curr + last)
         diff = self.backend.qam.extract_chroma(curr - last)

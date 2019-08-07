@@ -9,26 +9,15 @@ def _convert_decibels(decibels):
 
 class QamColorModem(object):
     @staticmethod
-    def _average_shift(b, a):
-        test_input = numpy.zeros(len(b) + len(a))
-        test_input[0] = 1.0
-        test_output = scipy.signal.lfilter(b, a, test_input)
-        shift = 0
-        for i in range(1, len(test_output)):
-            if abs(test_output[i]) > abs(test_output[shift]):
-                shift = i
-        return shift
-
-    @staticmethod
     def _precorrect_lowpass(wp, ws, gpass, gstop):
         b, a = scipy.signal.iirdesign(wp, ws, gpass, gstop, ftype='butter')
-        shift = QamColorModem._average_shift(b, a)
+        shift = int(numpy.round(scipy.signal.group_delay((b, a), [0.0])[1]))
         return lambda x: scipy.signal.lfilter(b, a, numpy.concatenate((x, numpy.zeros(shift))))[shift:]
 
     @staticmethod
     def _extract_chroma2x_design(wc, wp, ws, gpass, gstop):
         b, a = scipy.signal.iirdesign([wc - wp, wc + wp], [wc - ws, wc + ws], gpass, gstop, ftype='butter')
-        shift = QamColorModem._average_shift(b, a)
+        shift = int(numpy.round(scipy.signal.group_delay((b, a), [wc], fs=2.0)[1]))
         phase_shift = (numpy.angle(scipy.signal.freqz(b, a, worN=[wc], fs=2.0)[1][0]) + shift * numpy.pi * wc) % (
                 2.0 * numpy.pi)
         filter = lambda x: scipy.signal.lfilter(b, a, numpy.concatenate((x, numpy.zeros(shift))))[shift:]
@@ -39,22 +28,21 @@ class QamColorModem(object):
         newpass = -(20.0 * numpy.log10(1.0 - 10.0 ** (-gstop / 20.0)))
         newstop = -(20.0 * numpy.log10(1.0 - 10.0 ** (-gpass / 20.0)))
         b, a = scipy.signal.iirdesign([wc - ws, wc + ws], [wc - wp, wc + wp], newpass, newstop, ftype='butter')
-        shift = QamColorModem._average_shift(b, a)
+        shift = int(numpy.round(scipy.signal.group_delay((b, a), [0.0])[1]))
         return lambda x: scipy.signal.lfilter(b, a, numpy.concatenate((x, numpy.zeros(shift))))[shift:]
 
     @staticmethod
     def _demod_lowpass_design(wc, ws):
         b, a = scipy.signal.iirfilter(6, 2.0 * wc - ws, rs=48.0, btype='lowpass', ftype='cheby2')
-        shift = QamColorModem._average_shift(b, a)
+        shift = int(numpy.round(scipy.signal.group_delay((b, a), [0.0])[1]))
         return lambda x: scipy.signal.lfilter(b, a, numpy.concatenate((x, numpy.zeros(shift))))[shift:]
 
     def __init__(self, wc, wp, ws, gpass, gstop):
         self.carrier_phase_step = 0.5 * numpy.pi * wc
 
         self._chroma_precorrect_lowpass = QamColorModem._precorrect_lowpass(wp, ws, gpass, gstop)
-        self._extract_chroma2x, self._extract_phase_shift = QamColorModem._extract_chroma2x_design(0.5 * wc, 0.5 * wp,
-                                                                                                   0.5 * ws, gpass,
-                                                                                                   gstop)
+        self._extract_chroma2x, self.extract_chroma_phase_shift = \
+            QamColorModem._extract_chroma2x_design(0.5 * wc, 0.5 * wp, 0.5 * ws, gpass, gstop)
         self._remove_chroma2x = QamColorModem._remove_chroma2x_design(0.5 * wc, 0.5 * wp, 0.5 * ws, gpass, gstop)
         self._demod_lowpass = QamColorModem._demod_lowpass_design(0.5 * wc, 0.5 * ws)
 
@@ -78,7 +66,7 @@ class QamColorModem(object):
         return scipy.signal.resample_poly(chroma2x, up=1, down=2)
 
     def demodulate(self, start_phase, composite, strip_chroma=True):
-        shifted_phase = start_phase + self._extract_phase_shift
+        shifted_phase = start_phase + self.extract_chroma_phase_shift
         composite2x = scipy.signal.resample_poly(composite, up=2, down=1)
         chroma2x = self._extract_chroma2x(composite2x)
         phase = numpy.linspace(start=shifted_phase, stop=shifted_phase + len(chroma2x) * self.carrier_phase_step,
