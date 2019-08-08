@@ -3,6 +3,8 @@
 import numpy
 import scipy.signal
 
+from color_modem import utils
+
 
 class SecamModem:
     BLANK_LINE = numpy.zeros(720)
@@ -37,11 +39,9 @@ class SecamModem:
             self._start_phase_inversions = [False, False, False, True, True, True]
         self._chroma_demod_comb = self._feedback_comb(0.8275, 13.5 / 4.286, 3)
 
-        b, a = scipy.signal.iirdesign(wp=2.0 * 1300.0 / 13500.0, ws=2.0 * 3500.0 / 13500.0, gpass=3.0, gstop=30.0,
-                                      ftype='butter')
-        shift = int(numpy.round(scipy.signal.group_delay((b, a), [0.0])[1]))
-        self._chroma_precorrect_lowpass = lambda x: scipy.signal.lfilter(b, a, numpy.concatenate(
-            (x, numpy.zeros(shift))))[shift:]
+        self._chroma_precorrect_lowpass = utils.chroma_precorrect_lowpass(wp=2.0 * 1300.0 / 13500.0,
+                                                                          ws=2.0 * 3500.0 / 13500.0, gpass=3.0,
+                                                                          gstop=30.0)
 
         self._chroma_demod_chroma_filter = SecamModem._demod_chroma_filter_design(13500000.0, 3, 0.1)
         self._chroma_demod_luma_filter = SecamModem._demod_luma_filter_design(13500000.0, numpy.e, 3)

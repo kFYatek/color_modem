@@ -3,7 +3,7 @@
 import numpy
 import scipy.signal
 
-from color_modem.qam import QamColorModem
+from color_modem import utils
 
 
 class NiirModem:
@@ -17,8 +17,8 @@ class NiirModem:
         frame_shift_by_pi = (line_shift_by_pi * 625) % 2.0
         self._frame_shift = numpy.pi * frame_shift_by_pi
 
-        self._chroma_precorrect_lowpass = QamColorModem._precorrect_lowpass(2.0 * 1300000.0 / 13500000.0,
-                                                                            2.0 * 4000000.0 / 13500000.0, 3.0, 20.0)
+        self._chroma_precorrect_lowpass = utils.chroma_precorrect_lowpass(2.0 * 1300000.0 / 13500000.0,
+                                                                          2.0 * 4000000.0 / 13500000.0, 3.0, 20.0)
         self._demodulate_resample_factor = 8
         self._demodulate_upsampled_baseband_filter, self._demodulate_upsampled_filter = NiirModem._demodulate_am_design(
             2.0 * 4433618.75 / 13500000.0, 2.0 * 1300000.0 / 13500000.0, 2.0 * 4000000.0 / 13500000.0, 3.0, 20.0,

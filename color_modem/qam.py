@@ -2,18 +2,14 @@
 import numpy
 import scipy.signal
 
+from color_modem import utils
+
 
 def _convert_decibels(decibels):
     return 10.0 ** (decibels / 20.0)
 
 
 class QamColorModem(object):
-    @staticmethod
-    def _precorrect_lowpass(wp, ws, gpass, gstop):
-        b, a = scipy.signal.iirdesign(wp, ws, gpass, gstop, ftype='butter')
-        shift = int(numpy.round(scipy.signal.group_delay((b, a), [0.0])[1]))
-        return lambda x: scipy.signal.lfilter(b, a, numpy.concatenate((x, numpy.zeros(shift))))[shift:]
-
     @staticmethod
     def _extract_chroma2x_design(wc, wp, ws, gpass, gstop):
         b, a = scipy.signal.iirdesign([wc - wp, wc + wp], [wc - ws, wc + ws], gpass, gstop, ftype='butter')
@@ -40,7 +36,7 @@ class QamColorModem(object):
     def __init__(self, wc, wp, ws, gpass, gstop):
         self.carrier_phase_step = 0.5 * numpy.pi * wc
 
-        self._chroma_precorrect_lowpass = QamColorModem._precorrect_lowpass(wp, ws, gpass, gstop)
+        self._chroma_precorrect_lowpass = utils.chroma_precorrect_lowpass(wp, ws, gpass, gstop)
         self._extract_chroma2x, self.extract_chroma_phase_shift = \
             QamColorModem._extract_chroma2x_design(0.5 * wc, 0.5 * wp, 0.5 * ws, gpass, gstop)
         self._remove_chroma2x = QamColorModem._remove_chroma2x_design(0.5 * wc, 0.5 * wp, 0.5 * ws, gpass, gstop)
