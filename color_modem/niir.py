@@ -31,13 +31,12 @@ class NiirModem:
 
         self._carrier_up_notch = _carrier_notch()
 
-        self._blank_line_up = numpy.zeros(self._demodulate_resample_factor * 720)
         self._ep_line_up = 25.5 * numpy.ones(self._demodulate_resample_factor * 720)
 
         self._last_frame = -1
         self._last_line = -1
-        self._last_modulated_up = self._blank_line_up
-        self._last_saturation_plus_ep_up = self._ep_line_up
+        self._last_modulated_up = None
+        self._last_saturation_plus_ep_up = None
 
     @staticmethod
     def _encode_niir_components(r, g, b):
@@ -89,8 +88,8 @@ class NiirModem:
 
     def _modulate_precorrected_chroma(self, frame, line, updr, updb):
         start_phase = self._calculate_start_phase(frame, line)
-        phase = numpy.linspace(start=start_phase, stop=start_phase + len(updr) * 2.0 * self._carrier_phase_step,
-                               num=len(updr), endpoint=False) % (2.0 * numpy.pi)
+        phase = numpy.linspace(start=start_phase, stop=start_phase + len(updb) * 2.0 * self._carrier_phase_step,
+                               num=len(updb), endpoint=False) % (2.0 * numpy.pi)
         if not self._is_alternate_line(frame, line):
             return updr * numpy.cos(phase) - updb * numpy.sin(phase)
         else:
@@ -130,8 +129,11 @@ class NiirModem:
                                                                 ws / resample_factor, 0.5 * gpass, 0.5 * gstop)
 
     def demodulate(self, frame, line, composite):
-        if frame != self._last_frame or line != self._last_line + 2:
-            self._last_modulated_up = self._blank_line_up
+        if frame != self._last_frame or line != self._last_line + 2 \
+                or self._last_modulated_up is None or self._last_saturation_plus_ep_up is None:
+            last_modulated = self._modulate_precorrected_chroma(frame, line - 2, 0.0, 25.5 * numpy.ones(len(composite)))
+            self._last_modulated_up = self._demodulate_upsampled_filter(
+                scipy.signal.resample_poly(last_modulated, up=self._demodulate_resample_factor, down=1))
             self._last_saturation_plus_ep_up = self._ep_line_up
 
         upsampled = scipy.signal.resample_poly(composite, up=self._demodulate_resample_factor, down=1)
