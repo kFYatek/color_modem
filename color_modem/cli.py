@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+
 import sys
 
 from PIL import Image
@@ -29,10 +30,10 @@ def main():
     # modem = PalSModem(PalVariant.PAL)
 
     #### SECAM
-    modem = SecamModem()
+    # modem = SecamModem()
 
     #### NIIR (SECAM IV)
-    # modem = NiirModem()
+    modem = NiirModem()
 
     img_modem = ImageModem(modem)
     img = Image.open(sys.argv[1])

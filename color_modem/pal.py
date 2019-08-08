@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
+
 import enum
 import numpy
 import scipy.signal
 
-from color_modem import qam, comb
+from color_modem import qam, comb, utils
 
 
 class PalVariant(enum.Enum):
@@ -95,18 +96,12 @@ class PalSModem(qam.AbstractQamColorModem):
 
 
 class PalDModem(comb.AbstractCombModem):
-    @staticmethod
-    def _filter_design(carrier_phase_step):
-        b, a = scipy.signal.iirfilter(6, carrier_phase_step / numpy.pi - 1300.0 / 13500.0, rs=48.0, btype='lowpass',
-                                      ftype='cheby2')
-        shift = int(numpy.round(scipy.signal.group_delay((b, a), [0.0])[1]))
-        return lambda x: scipy.signal.lfilter(b, a, numpy.concatenate((x, numpy.zeros(shift))))[shift:]
-
     def __init__(self, *args, **kwargs):
         super(PalDModem, self).__init__(PalSModem(*args, **kwargs))
         self._sin_factor = numpy.sin(0.5 * self.backend.line_shift)
         self._cos_factor = numpy.cos(0.5 * self.backend.line_shift)
-        self._filter = PalDModem._filter_design(self.backend.qam.carrier_phase_step)
+        self._filter = utils.iirfilter(6, self.backend.qam.carrier_phase_step / numpy.pi - 1300.0 / 13500.0, rs=48.0,
+                                       btype='lowpass', ftype='cheby2')
 
     def _demodulate_am(self, data, start_phase):
         data2x = scipy.signal.resample_poly(data, up=2, down=1)

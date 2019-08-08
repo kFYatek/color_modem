@@ -17,19 +17,15 @@ class NiirModem:
         frame_shift_by_pi = (line_shift_by_pi * 625) % 2.0
         self._frame_shift = numpy.pi * frame_shift_by_pi
 
-        self._chroma_precorrect_lowpass = utils.chroma_precorrect_lowpass(2.0 * 1300000.0 / 13500000.0,
-                                                                          2.0 * 4000000.0 / 13500000.0, 3.0, 20.0)
+        self._chroma_precorrect_lowpass = utils.iirdesign(2.0 * 1300000.0 / 13500000.0, 2.0 * 4000000.0 / 13500000.0,
+                                                          3.0, 20.0)
         self._demodulate_resample_factor = 8
         self._demodulate_upsampled_baseband_filter, self._demodulate_upsampled_filter = NiirModem._demodulate_am_design(
             2.0 * 4433618.75 / 13500000.0, 2.0 * 1300000.0 / 13500000.0, 2.0 * 4000000.0 / 13500000.0, 3.0, 20.0,
             self._demodulate_resample_factor)
 
-        def _carrier_notch():
-            b, a = scipy.signal.iirfilter(2, [4433618.75 - 9375.0, 4433618.75 + 9375.0], ftype='bessel',
-                                          fs=13500000.0 * self._demodulate_resample_factor)
-            return lambda x: scipy.signal.lfilter(b, a, x)
-
-        self._carrier_up_notch = _carrier_notch()
+        self._carrier_up_notch = utils.iirfilter(2, numpy.array([4433618.75 - 9375.0, 4433618.75 + 9375.0]) / (
+                0.5 * 13500000.0 * self._demodulate_resample_factor), ftype='bessel', shift=False)
 
         self._ep_line_up = 25.5 * numpy.ones(self._demodulate_resample_factor * 720)
 
@@ -114,18 +110,8 @@ class NiirModem:
 
     @staticmethod
     def _demodulate_am_design(wc, wp, ws, gpass, gstop, resample_factor):
-        def _baseband_filter(wp, ws, gpass, gstop):
-            b, a = scipy.signal.iirdesign(wp, ws, gpass, gstop, ftype='butter')
-            shift = int(numpy.round(scipy.signal.group_delay((b, a), [0.0])[1]))
-            return lambda x: scipy.signal.lfilter(b, a, numpy.concatenate((x, numpy.zeros(shift))))[shift:]
-
-        def _modulated_filter(wc, wp, ws, gpass, gstop):
-            b, a = scipy.signal.iirdesign([wc - wp, wc + wp], [wc - ws, wc + ws], gpass, gstop, ftype='butter')
-            shift = int(numpy.round(scipy.signal.group_delay((b, a), [wc], fs=2.0)[1]))
-            return lambda x: scipy.signal.lfilter(b, a, numpy.concatenate((x, numpy.zeros(shift))))[shift:]
-
-        return _baseband_filter(wp / resample_factor, ws / resample_factor, 0.5 * gpass,
-                                0.5 * gstop), _modulated_filter(wc / resample_factor, wp / resample_factor,
+        return utils.iirdesign(wp / resample_factor, ws / resample_factor, 0.5 * gpass,
+                               0.5 * gstop), utils.iirdesign_wc(wc / resample_factor, wp / resample_factor,
                                                                 ws / resample_factor, 0.5 * gpass, 0.5 * gstop)
 
     def demodulate(self, frame, line, composite):

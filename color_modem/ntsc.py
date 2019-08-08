@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-import enum
 
+import enum
 import numpy
 
 from color_modem import comb

@@ -1,46 +1,18 @@
 # -*- coding: utf-8 -*-
+
 import numpy
 import scipy.signal
 
 from color_modem import utils
 
 
-def _convert_decibels(decibels):
-    return 10.0 ** (decibels / 20.0)
-
-
 class QamColorModem(object):
-    @staticmethod
-    def _extract_chroma2x_design(wc, wp, ws, gpass, gstop):
-        b, a = scipy.signal.iirdesign([wc - wp, wc + wp], [wc - ws, wc + ws], gpass, gstop, ftype='butter')
-        shift = int(numpy.round(scipy.signal.group_delay((b, a), [wc], fs=2.0)[1]))
-        phase_shift = (numpy.angle(scipy.signal.freqz(b, a, worN=[wc], fs=2.0)[1][0]) + shift * numpy.pi * wc) % (
-                2.0 * numpy.pi)
-        filter = lambda x: scipy.signal.lfilter(b, a, numpy.concatenate((x, numpy.zeros(shift))))[shift:]
-        return filter, phase_shift
-
-    @staticmethod
-    def _remove_chroma2x_design(wc, wp, ws, gpass, gstop):
-        newpass = -(20.0 * numpy.log10(1.0 - 10.0 ** (-gstop / 20.0)))
-        newstop = -(20.0 * numpy.log10(1.0 - 10.0 ** (-gpass / 20.0)))
-        b, a = scipy.signal.iirdesign([wc - ws, wc + ws], [wc - wp, wc + wp], newpass, newstop, ftype='butter')
-        shift = int(numpy.round(scipy.signal.group_delay((b, a), [0.0])[1]))
-        return lambda x: scipy.signal.lfilter(b, a, numpy.concatenate((x, numpy.zeros(shift))))[shift:]
-
-    @staticmethod
-    def _demod_lowpass_design(wc, ws):
-        b, a = scipy.signal.iirfilter(6, 2.0 * wc - ws, rs=48.0, btype='lowpass', ftype='cheby2')
-        shift = int(numpy.round(scipy.signal.group_delay((b, a), [0.0])[1]))
-        return lambda x: scipy.signal.lfilter(b, a, numpy.concatenate((x, numpy.zeros(shift))))[shift:]
-
     def __init__(self, wc, wp, ws, gpass, gstop):
         self.carrier_phase_step = 0.5 * numpy.pi * wc
-
-        self._chroma_precorrect_lowpass = utils.chroma_precorrect_lowpass(wp, ws, gpass, gstop)
-        self._extract_chroma2x, self.extract_chroma_phase_shift = \
-            QamColorModem._extract_chroma2x_design(0.5 * wc, 0.5 * wp, 0.5 * ws, gpass, gstop)
-        self._remove_chroma2x = QamColorModem._remove_chroma2x_design(0.5 * wc, 0.5 * wp, 0.5 * ws, gpass, gstop)
-        self._demod_lowpass = QamColorModem._demod_lowpass_design(0.5 * wc, 0.5 * ws)
+        self._chroma_precorrect_lowpass = utils.iirdesign(wp, ws, gpass, gstop)
+        self._extract_chroma2x, self.extract_chroma_phase_shift, self._remove_chroma2x = \
+            utils.irrsplitter(0.5 * wc, 0.5 * wp, 0.5 * ws, gpass, gstop, pass_phase_shift=True)
+        self._demod_lowpass = utils.iirfilter(6, wc - 0.5 * ws, rs=48.0, btype='lowpass', ftype='cheby2')
 
     def _modulate_chroma(self, start_phase, u, v):
         assert len(u) == len(v)
@@ -80,34 +52,6 @@ class QamColorModem(object):
 
 
 class AbstractQamColorModem(object):
-    @staticmethod
-    def _generate_unmodulated_chroma_window(fs, bandwidth3db, bandwidth20db):
-        window = numpy.zeros(361)
-        for i in range(len(window)):
-            freq = 18750.0 * i
-            if fs + freq >= 6750000.0:
-                window[i] = 0.0
-            elif freq > bandwidth3db:
-                window[i] = _convert_decibels(-3.0 - 17.0 * (freq - bandwidth3db) / (bandwidth20db - bandwidth3db))
-            else:
-                window[i] = _convert_decibels(-3.0)
-        return window
-
-    @staticmethod
-    def _generate_modulated_chroma_window(fs, bandwidth3db, bandwidth20db):
-        left_bound = fs - bandwidth3db
-        right_bound = fs + bandwidth3db
-        window = numpy.zeros(361)
-        for i in range(len(window)):
-            freq = 18750.0 * i
-            if freq < left_bound:
-                window[i] = _convert_decibels(-3.0 + 17.0 * (freq - left_bound) / (bandwidth20db - left_bound))
-            elif freq <= right_bound:
-                window[i] = _convert_decibels(-3.0)
-            else:
-                window[i] = _convert_decibels(-3.0 - 17.0 * (freq - right_bound) / (fs + bandwidth20db - right_bound))
-        return window
-
     def __init__(self, fs, bandwidth3db, bandwidth20db, lines):
         if lines == 525:
             active_pixels = 858
