@@ -138,8 +138,6 @@ class PalDModem(comb.AbstractCombModem):
 
 
 class Pal3DModem(PalDModem):
-    BLANK_LINE = numpy.zeros(720)
-
     def __init__(self, *args, **kwargs):  # avg=None
         if 'use_sin' in kwargs:
             use_sin = kwargs['use_sin']
@@ -235,7 +233,7 @@ class Pal3DModem(PalDModem):
             y = self._last_composite
 
         if strip_chroma:
-            y = y - self.backend.modulate_yuv(frame, line - 2, self.BLANK_LINE, u, v)
+            y = y - self.backend.modulate_yuv(frame, line - 2, numpy.zeros(len(composite)), u, v)
 
         self._last_frame = frame
         self._last_line = line

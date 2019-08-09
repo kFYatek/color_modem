@@ -27,8 +27,6 @@ class NiirModem:
         self._carrier_up_notch = utils.iirfilter(2, numpy.array([4433618.75 - 9375.0, 4433618.75 + 9375.0]) / (
                 0.5 * 13500000.0 * self._demodulate_resample_factor), ftype='bessel', shift=False)
 
-        self._ep_line_up = 25.5 * numpy.ones(self._demodulate_resample_factor * 720)
-
         self._last_frame = -1
         self._last_line = -1
         self._last_modulated_up = None
@@ -120,7 +118,7 @@ class NiirModem:
             last_modulated = self._modulate_precorrected_chroma(frame, line - 2, 0.0, 25.5 * numpy.ones(len(composite)))
             self._last_modulated_up = self._demodulate_upsampled_filter(
                 scipy.signal.resample_poly(last_modulated, up=self._demodulate_resample_factor, down=1))
-            self._last_saturation_plus_ep_up = self._ep_line_up
+            self._last_saturation_plus_ep_up = 25.5 * numpy.ones(self._demodulate_resample_factor * len(composite))
 
         upsampled = scipy.signal.resample_poly(composite, up=self._demodulate_resample_factor, down=1)
         modulated_up = self._demodulate_upsampled_filter(upsampled)

@@ -4,13 +4,11 @@ import numpy
 
 
 class AbstractCombModem(object):
-    BLANK_LINE = numpy.zeros(720)
-
     def __init__(self, backend):
         self.backend = backend
         self._last_frame = -1
         self._last_line = -1
-        self._last_composite = numpy.zeros(720)
+        self._last_composite = None
 
     def modulate_yuv(self, frame, line, y, u, v):
         return self.backend.modulate_yuv(frame, line, y, u, v)
@@ -19,12 +17,12 @@ class AbstractCombModem(object):
         return self.backend.modulate(frame, line, r, g, b)
 
     def demodulate_yuv(self, frame, line, composite, strip_chroma=True, *args, **kwargs):
-        if frame != self._last_frame or line != self._last_line + 2:
+        if frame != self._last_frame or line != self._last_line + 2 or self._last_composite is None:
             y, u, v = self.backend.demodulate_yuv(frame, line, composite, strip_chroma)
         else:
             y, u, v = self.demodulate_yuv_combed(frame, line, self._last_composite, composite, *args, **kwargs)
             if strip_chroma:
-                y = y - self.backend.modulate_yuv(frame, line, self.BLANK_LINE, u, v)
+                y = y - self.backend.modulate_yuv(frame, line, numpy.zeros(len(composite)), u, v)
         self._last_frame = frame
         self._last_line = line
         self._last_composite = numpy.array(composite)
@@ -44,8 +42,6 @@ class AbstractCombModem(object):
 
 
 class SimpleCombModem(object):
-    BLANK_LINE = numpy.zeros(720)
-
     @staticmethod
     def _minavg(val1, val2):
         sign = (1.0 - numpy.signbit(val1)) - numpy.signbit(val2)
@@ -79,7 +75,8 @@ class SimpleCombModem(object):
             u = self._avg(self._last_demodulated[1], curr[1])
             v = self._avg(self._last_demodulated[2], curr[2])
             if strip_chroma:
-                y = y - self.backend.modulate_yuv(frame, line - 2 * self.demodulation_delay, self.BLANK_LINE, u, v)
+                y = y - self.backend.modulate_yuv(frame, line - 2 * self.demodulation_delay,
+                                                  numpy.zeros(len(composite)), u, v)
         self._last_frame = frame
         self._last_line = line
         self._last_demodulated = curr

@@ -7,7 +7,6 @@ from color_modem import utils
 
 
 class SecamModem:
-    BLANK_LINE = numpy.zeros(720)
     DR_FC = 4406250.0
     DB_FC = 4250000.0
     DR_DEV = 280000.0
@@ -36,8 +35,8 @@ class SecamModem:
         self._chroma_demod_db = SecamModem._fm_decoder(self.DB_FC, self.DB_DEV)
         self._last_frame = -1
         self._last_line = -1
-        self._last_dr = SecamModem.BLANK_LINE
-        self._last_db = SecamModem.BLANK_LINE
+        self._last_dr = None
+        self._last_db = None
 
     @staticmethod
     def _encode_secam_components(r, g, b):
@@ -120,8 +119,6 @@ class SecamModem:
         return filter
 
     def _chroma_precorrect(self, chroma):
-        assert len(chroma) == 720
-
         chroma = self._chroma_precorrect_lowpass(chroma)
         chromahp = SecamModem._highpass(chroma, 3.0 * 85.0 / 13500.0)
 
@@ -210,12 +207,11 @@ class SecamModem:
         return decode
 
     def demodulate(self, frame, line, composite):
-        assert len(composite) == 720
         composite = numpy.array(composite, copy=False)
 
-        if frame != self._last_frame or line != self._last_line + 2:
-            self._last_dr = SecamModem.BLANK_LINE
-            self._last_db = SecamModem.BLANK_LINE
+        if frame != self._last_frame or line != self._last_line + 2 or self._last_dr is None or self._last_db is None:
+            self._last_dr = numpy.zeros(len(composite))
+            self._last_db = numpy.zeros(len(composite))
 
         if not SecamModem._is_alternate_line(frame, line):
             chroma_demod = self._chroma_demod_dr
