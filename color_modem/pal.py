@@ -1,49 +1,24 @@
 # -*- coding: utf-8 -*-
 
-import enum
+import collections
+
 import numpy
 import scipy.signal
 
 from color_modem import qam, comb, utils
 
+PalVariant = collections.namedtuple('PalVariant', ['fs', 'line_count', 'bandwidth20db'])
 
-class PalVariant(enum.Enum):
-    PAL = 1
-    PAL_M = 2
-    PAL_N = 3
-    PAL_FakeM = 4
-
-    @staticmethod
-    def fs(variant):
-        if variant == PalVariant.PAL:
-            return 4433618.75
-        elif variant == PalVariant.PAL_M:
-            return 511312500.0 / 143.0
-        elif variant == PalVariant.PAL_N:
-            return 3582056.25
-        elif variant == PalVariant.PAL_FakeM:
-            return 5000000.0 * 63.0 / 88.0
-        raise RuntimeError('Unsupported PalVariant: %r' % (variant,))
-
-    @staticmethod
-    def line_count(variant):
-        if variant == PalVariant.PAL_M or variant == PalVariant.PAL_FakeM:
-            return 525
-        else:
-            return 625
-
-    @staticmethod
-    def bandwidth20db(variant):
-        if variant == PalVariant.PAL:
-            return 4000000.0
-        else:
-            return 3600000.0
+PalVariant.PAL = PalVariant(fs=4433618.75, line_count=625, bandwidth20db=4000000.0)
+PalVariant.PAL_M = PalVariant(fs=227.25 * 15750.0 * 1000.0 / 1001.0, line_count=525, bandwidth20db=3600000.0)
+PalVariant.PAL_N = PalVariant(fs=3582056.25, line_count=625, bandwidth20db=3600000.0)
+# PAL at exactly the NTSC carrier frequency
+PalVariant.PAL_FakeM = PalVariant(fs=227.5 * 15750.0 * 1000.0 / 1001.0, line_count=525, bandwidth20db=3600000.0)
 
 
 class PalSModem(qam.AbstractQamColorModem):
-    def __init__(self, variant):
-        super(PalSModem, self).__init__(PalVariant.fs(variant), 1300000.0, PalVariant.bandwidth20db(variant),
-                                        PalVariant.line_count(variant))
+    def __init__(self, variant=PalVariant.PAL):
+        super(PalSModem, self).__init__(variant.fs, 1300000.0, variant.bandwidth20db, variant.line_count)
 
     @staticmethod
     def encode_yuv(r, g, b):

@@ -1,46 +1,24 @@
 # -*- coding: utf-8 -*-
 
-import enum
+import collections
+
 import numpy
 
 from color_modem import comb
 from color_modem.qam import AbstractQamColorModem
 
+NtscVariant = collections.namedtuple('NtscVariant', ['fs', 'line_count'])
 
-class NtscVariant(enum.Enum):
-    NTSC = 1
-    NTSC_I = 2
-    NTSC443 = 3
-    NTSC361 = 4
-
-    @staticmethod
-    def fs(variant):
-        if variant == NtscVariant.NTSC:
-            return 5000000.0 * 63.0 / 88.0
-        elif variant == NtscVariant.NTSC_I:
-            return 4429687.5
-        elif variant == NtscVariant.NTSC443:
-            # return 633375000.0 / 143.0
-            # return 4433625.0
-            return 4433618.75
-        elif variant == NtscVariant.NTSC361:
-            # This is the weird mode that Raspberry Pi actually outputs when nominally set to PAL-M
-            return (229.5) * 15750.0 * 1000.0 / 1001.0
-        raise RuntimeError('Unsupported NtscVariant: %r' % (variant,))
-
-    @staticmethod
-    def line_count(variant):
-        if variant == NtscVariant.NTSC_I:
-            return 625
-        else:
-            return 525
+NtscVariant.NTSC = NtscVariant(fs=227.5 * 15750.0 * 1000.0 / 1001.0, line_count=525)
+NtscVariant.NTSC_I = NtscVariant(fs=4429687.5, line_count=625)
+NtscVariant.NTSC443 = NtscVariant(fs=4433618.75, line_count=525)
+# This is the weird mode that Raspberry Pi actually outputs when nominally set to PAL-M
+NtscVariant.NTSC361 = NtscVariant(fs=229.5 * 15750.0 * 1000.0 / 1001.0, line_count=525)
 
 
 class NtscModem(AbstractQamColorModem):
-    def __init__(self, variant, line_count=None):
-        if line_count is None:
-            line_count = NtscVariant.line_count(variant)
-        super(NtscModem, self).__init__(NtscVariant.fs(variant), 1300000.0, 3600000.0, line_count)
+    def __init__(self, variant=NtscVariant.NTSC):
+        super(NtscModem, self).__init__(variant.fs, 1300000.0, 3600000.0, variant.line_count)
 
     @staticmethod
     def encode_yuv(r, g, b):
@@ -90,7 +68,11 @@ class NtscModem(AbstractQamColorModem):
 class NtscCombModem(comb.AbstractCombModem):
     def __init__(self, *args, **kwargs):
         super(NtscCombModem, self).__init__(NtscModem(*args, **kwargs))
-        self._factor = 0.5 / numpy.sin(self.backend.line_shift * 0.5)
+        sine = numpy.sin(self.backend.line_shift * 0.5)
+        if abs(sine) > 0.05:
+            self._factor = 0.5 / sine
+        else:
+            self._factor = 1e9001
 
     def demodulate_yuv_combed(self, frame, line, last, curr):
         # NTSC(n) = Y(x) + U(x)*sin(wt(x)+LS*n) + V(x)*cos(wt(x)+LS*n)
@@ -101,6 +83,9 @@ class NtscCombModem(comb.AbstractCombModem):
         # In particular, in NTSC-I and NTSC-M, LS == %pi, so sin(LS/2) == 1
         last = numpy.array(last, copy=False)
         curr = numpy.array(curr, copy=False)
+
+        if not numpy.isfinite(self._factor):
+            return self.backend.demodulate_yuv(frame, line, curr, strip_chroma=False)
 
         diff_phase = self.backend.calculate_start_phase(frame, line) - 0.5 * self.backend.line_shift
         if diff_phase < 0.0:

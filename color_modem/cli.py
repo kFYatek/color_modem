@@ -4,7 +4,7 @@ import sys
 
 from PIL import Image
 
-from color_modem.comb import Simple3DCombModem
+from color_modem.comb import Simple3DCombModem, SimpleCombModem
 from color_modem.image import ImageModem
 from color_modem.niir import NiirModem
 from color_modem.ntsc import NtscCombModem, NtscVariant, NtscModem
@@ -15,25 +15,25 @@ from color_modem.secam import SecamModem
 def main():
     #### NTSC
     # best quality 3D comb filter
-    # modem = Simple3DCombModem(NtscCombModem(NtscVariant.NTSC))
+    # modem = Simple3DCombModem(NtscCombModem())
     # simple 2D comb filter
-    # modem = NtscCombModem(NtscVariant.NTSC)
+    # modem = NtscCombModem()
     # simple bandpass filtering
-    # modem = NtscModem(NtscVariant.NTSC)
+    # modem = NtscModem()
 
     #### PAL
     # best quality 3D comb filter
-    # modem = Pal3DModem(PalVariant.PAL)
+    # modem = Pal3DModem()
     # standard PAL-D (2D comb filter)
-    # modem = PalDModem(PalVariant.PAL)
+    # modem = PalDModem()
     # simple PAL-S (bandpass filtering)
-    # modem = PalSModem(PalVariant.PAL)
+    # modem = PalSModem()
 
     #### SECAM
-    # modem = SecamModem()
+    modem = SecamModem()
 
     #### NIIR (SECAM IV)
-    modem = NiirModem()
+    # modem = NiirModem()
 
     img_modem = ImageModem(modem)
     img = Image.open(sys.argv[1])
