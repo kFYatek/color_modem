@@ -1,9 +1,59 @@
 # -*- coding: utf-8 -*-
 
+import collections
+import fractions
+
 import numpy
 import scipy.signal
 
 from color_modem import utils
+
+
+class QamConfig(collections.namedtuple('QamConfig', ['fsc', 'bandwidth3db', 'bandwidth20db', 'lines'])):
+    def __new__(cls, *args, **kwargs):
+        self = QamConfig.__base__.__new__(cls, *args, **kwargs)
+        if self.lines not in {525, 625}:
+            raise RuntimeError('%d is not a supported line count' % (self.lines,))
+        return self
+
+    @property
+    def framerate(self):
+        return (30000.0 / 1001.0) if self.lines == 525 else 25.0
+
+    @property
+    def line_shift(self):
+        return 2.0 * numpy.pi * ((self.fsc / (self.framerate * self.lines)) % 1.0)
+
+    @property
+    def field_shift(self):
+        return numpy.pi * (((self.lines + 1) * self.fsc / (self.framerate * self.lines)) % 2.0)
+
+    @property
+    def frame_shift(self):
+        return 2.0 * numpy.pi * ((self.fsc / self.framerate) % 1.0)
+
+    @property
+    def frame_cycle(self):
+        return fractions.Fraction(self.fsc / self.framerate).denominator
+
+    def is_alternate_line(self, frame, line):
+        # For 525-line system:
+        #
+        # NOTE: Lines 21-22, 283-285 and 263 are defined to be active by the
+        # analogue specifications, but are by convention not encoded digitally.
+        #
+        # digital line 0 ~ analog line 23 (odd fields 1 & 3)
+        # digital line 1 ~ analog line 286 (even fields 2 & 4)
+        # digital line 2 - analog line 24 (odd fields 1 & 3)
+        # digital line 3 - analog line 287 (even fields 2 & 4)
+        #
+        # For 625-line system:
+        #
+        # digital line 0 ~ analog line 23 (even fields 1 & 3)
+        # digital line 1 ~ analog line 336 (odd fields 2 & 4)
+        # digital line 2 - analog line 24 (even fields 1 & 3)
+        # digital line 3 - analog line 337 (odd fields 2 & 4)
+        return (((line % 2) ^ ((line // 2) % 2)) == frame % 2) == (self.lines == 525)
 
 
 class QamColorModem(object):
@@ -52,33 +102,16 @@ class QamColorModem(object):
 
 
 class AbstractQamColorModem(object):
-    def __init__(self, fs, fsc, bandwidth3db, bandwidth20db, lines):
-        if lines == 525:
-            framerate = 30000.0 / 1001.0
-            total_first_field_lines = 263
-        elif lines == 625:
-            framerate = 25.0
-            total_first_field_lines = 313
-        else:
-            raise RuntimeError('%d is not a supported line count' % (lines,))
-        self.line_count = lines
-        self.qam = QamColorModem(2.0 * fsc / fs, 2.0 * bandwidth3db / fs,
-                                 2.0 * bandwidth20db / fs, 3.0, 20.0)
-        line_shift_by_pi = ((2.0 * fsc) / (framerate * lines)) % 2.0
-        self.line_shift = numpy.pi * line_shift_by_pi
-        odd_numbered_digital_line_shift_by_pi = (line_shift_by_pi * total_first_field_lines) % 2.0
-        self._odd_numbered_digital_line_shift = numpy.pi * odd_numbered_digital_line_shift_by_pi
-        frame_shift_by_pi = (line_shift_by_pi * lines) % 2.0
-        self._frame_shift = numpy.pi * frame_shift_by_pi
+    def __init__(self, fs, config):
+        self.config = config
+        self.qam = QamColorModem(2.0 * config.fsc / fs, 2.0 * config.bandwidth3db / fs, 2.0 * config.bandwidth20db / fs,
+                                 3.0, 20.0)
 
     def calculate_start_phase(self, frame, line):
-        if self.line_count == 525:
-            frame %= 2
-        else:
-            frame %= 4
-        frame_shift = (frame * self._frame_shift) % (2.0 * numpy.pi)
-        field_shift = (line % 2) * self._odd_numbered_digital_line_shift
-        line_shift = ((line // 2) * self.line_shift) % (2.0 * numpy.pi)
+        frame %= self.config.frame_cycle
+        frame_shift = (frame * self.config.frame_shift) % (2.0 * numpy.pi)
+        field_shift = (line % 2) * self.config.field_shift
+        line_shift = ((line // 2) * self.config.line_shift) % (2.0 * numpy.pi)
         return (frame_shift + field_shift + line_shift) % (2.0 * numpy.pi)
 
     def modulate(self, frame, line, r, g, b):
@@ -86,25 +119,6 @@ class AbstractQamColorModem(object):
 
     def demodulate(self, frame, line, *args, **kwargs):
         return self.decode_yuv(*self.demodulate_yuv(frame, line, *args, **kwargs))
-
-    def is_alternate_line(self, frame, line):
-        # For 525-line system:
-        #
-        # NOTE: Lines 21-22, 283-285 and 263 are defined to be active by the
-        # analogue specifications, but are by convention not encoded digitally.
-        #
-        # digital line 0 ~ analog line 23 (odd fields 1 & 3)
-        # digital line 1 ~ analog line 286 (even fields 2 & 4)
-        # digital line 2 - analog line 24 (odd fields 1 & 3)
-        # digital line 3 - analog line 287 (even fields 2 & 4)
-        #
-        # For 625-line system:
-        #
-        # digital line 0 ~ analog line 23 (even fields 1 & 3)
-        # digital line 1 ~ analog line 336 (odd fields 2 & 4)
-        # digital line 2 - analog line 24 (even fields 1 & 3)
-        # digital line 3 - analog line 337 (odd fields 2 & 4)
-        return (((line % 2) ^ ((line // 2) % 2)) == frame % 2) == (self.line_count == 525)
 
 
 """
