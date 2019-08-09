@@ -17,8 +17,8 @@ PalVariant.PAL_FakeM = PalVariant(fsc=227.5 * 15750.0 * 1000.0 / 1001.0, line_co
 
 
 class PalSModem(qam.AbstractQamColorModem):
-    def __init__(self, variant=PalVariant.PAL):
-        super(PalSModem, self).__init__(variant.fsc, 1300000.0, variant.bandwidth20db, variant.line_count)
+    def __init__(self, variant=PalVariant.PAL, fs=13500000.0):
+        super(PalSModem, self).__init__(fs, variant.fsc, 1300000.0, variant.bandwidth20db, variant.line_count)
 
     @staticmethod
     def encode_yuv(r, g, b):
@@ -71,11 +71,12 @@ class PalSModem(qam.AbstractQamColorModem):
 
 
 class PalDModem(comb.AbstractCombModem):
-    def __init__(self, *args, **kwargs):
-        super(PalDModem, self).__init__(PalSModem(*args, **kwargs))
+    def __init__(self, variant=PalVariant.PAL, *args, **kwargs):
+        super(PalDModem, self).__init__(PalSModem(variant, *args, **kwargs))
         self._sin_factor = numpy.sin(0.5 * self.backend.line_shift)
         self._cos_factor = numpy.cos(0.5 * self.backend.line_shift)
-        self._filter = utils.iirfilter(6, self.backend.qam.carrier_phase_step / numpy.pi - 1300000.0 / 13500000.0,
+        self._filter = utils.iirfilter(6,
+                                       (1.0 - 1300000.0 / variant.fsc) * self.backend.qam.carrier_phase_step / numpy.pi,
                                        rs=48.0, btype='lowpass', ftype='cheby2')
 
     def _demodulate_am(self, data, start_phase):

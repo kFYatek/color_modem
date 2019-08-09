@@ -52,7 +52,7 @@ class QamColorModem(object):
 
 
 class AbstractQamColorModem(object):
-    def __init__(self, fsc, bandwidth3db, bandwidth20db, lines):
+    def __init__(self, fs, fsc, bandwidth3db, bandwidth20db, lines):
         if lines == 525:
             active_pixels = 858
             total_first_field_lines = 263
@@ -62,9 +62,9 @@ class AbstractQamColorModem(object):
         else:
             raise RuntimeError('%d is not a supported line count' % (lines,))
         self.line_count = lines
-        self.qam = QamColorModem(2.0 * fsc / 13500000.0, 2.0 * bandwidth3db / 13500000.0,
-                                 2.0 * bandwidth20db / 13500000.0, 3.0, 20.0)
-        line_shift_by_pi = (2.0 * active_pixels * fsc / 13500000.0) % 2.0
+        self.qam = QamColorModem(2.0 * fsc / fs, 2.0 * bandwidth3db / fs,
+                                 2.0 * bandwidth20db / fs, 3.0, 20.0)
+        line_shift_by_pi = (2.0 * active_pixels * fsc / fs) % 2.0
         self.line_shift = numpy.pi * line_shift_by_pi
         odd_numbered_digital_line_shift_by_pi = (line_shift_by_pi * total_first_field_lines) % 2.0
         self._odd_numbered_digital_line_shift = numpy.pi * odd_numbered_digital_line_shift_by_pi

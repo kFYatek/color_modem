@@ -7,34 +7,35 @@ from color_modem import utils
 
 
 class SecamModem:
-    DR_FC = 4406250.0
-    DB_FC = 4250000.0
-    DR_DEV = 280000.0
-    DB_DEV = 230000.0
-    MIN_FREQ = 3900000.0
-    MAX_FREQ = 4756250.0
+    def __init__(self, alternate_phases=False, fs=13500000.0):
+        self._dr_fc = 2.0 * 4406250.0 / fs
+        self._db_fc = 2.0 * 4250000.0 / fs
+        self._dr_dev = 2.0 * 280000.0 / fs
+        self._db_dev = 2.0 * 230000.0 / fs
+        self._min_freq = 2.0 * 3900000.0 / fs
+        self._max_freq = 2.0 * 4756250.0 / fs
+        self._bell_freq = 2.0 * 4286000.0 / fs
 
-    def __init__(self, alternate_phases=False):
         if not alternate_phases:
             self._start_phase_inversions = [False, False, True, False, False, True]
         else:
             self._start_phase_inversions = [False, False, False, True, True, True]
-        self._chroma_demod_comb = self._feedback_comb(0.8275, 13500000.0 / 4286000.0, 3)
+        self._chroma_demod_comb = self._feedback_comb(0.8275, fs / 4286000.0, 3)
 
-        self._chroma_precorrect_lowpass = utils.iirdesign(wp=2.0 * 1300000.0 / 13500000.0,
-                                                          ws=2.0 * 3500000.0 / 13500000.0, gpass=3.0, gstop=30.0)
+        self._chroma_precorrect_lowpass = utils.iirdesign(wp=2.0 * 1300000.0 / fs, ws=2.0 * 3500000.0 / fs,
+                                                          gpass=3.0, gstop=30.0)
         self._chroma_precorrect, self._reverse_chroma_precorrect = SecamModem._chroma_precorrect_design(
-            3.0 * 85000.0 / 13500000.0)
+            3.0 * 85000.0 / fs)
 
-        center = (SecamModem.MIN_FREQ + SecamModem.MAX_FREQ) / 13500000.0
-        dev = (SecamModem.MAX_FREQ - SecamModem.MIN_FREQ) / 13500000.0
+        center = 0.5 * (self._min_freq + self._max_freq)
+        dev = 0.5 * (self._max_freq - self._min_freq)
 
         self._chroma_demod_chroma_filter = utils.iirfilter(3, [center - dev, center + dev],
                                                            rp=0.1, btype='bandpass', ftype='cheby1')
         self._chroma_demod_luma_filter = utils.iirfilter(3, [center - dev * numpy.e, center + dev * numpy.e],
                                                          btype='bandstop', ftype='bessel')
-        self._chroma_demod_dr = SecamModem._fm_decoder(self.DR_FC, self.DR_DEV)
-        self._chroma_demod_db = SecamModem._fm_decoder(self.DB_FC, self.DB_DEV)
+        self._chroma_demod_dr = SecamModem._fm_decoder(self._dr_fc, self._dr_dev)
+        self._chroma_demod_db = SecamModem._fm_decoder(self._db_fc, self._db_dev)
         self._last_frame = -1
         self._last_line = -1
         self._last_dr = None
@@ -97,8 +98,7 @@ class SecamModem:
             result[scaled_a] = scale
         return result
 
-    @staticmethod
-    def _feedback_comb(alpha, k, lanczos_a):
+    def _feedback_comb(self, alpha, k, lanczos_a):
         k_frac = -k % 1.0
         k_int = int(numpy.floor(k))
         kernel = alpha * SecamModem._lanczos_kernel(lanczos_a, k_frac)[1:]
@@ -111,8 +111,8 @@ class SecamModem:
             filter_a[shift + lanczos_a + k_int - i] = -kernel[i]
 
         # These numbers don't seem to make much sense, but give good results
-        frequencies = -0.5 * (SecamModem.MIN_FREQ + SecamModem.MAX_FREQ) * numpy.ones(len(filter_a) - 1)
-        phase_shift = 2.0 * numpy.pi * frequencies / 13500000.0
+        frequencies = -0.5 * (self._min_freq + self._max_freq) * numpy.ones(len(filter_a) - 1)
+        phase_shift = numpy.pi * frequencies
         phase = numpy.cumsum(phase_shift)
         phase = phase - phase[0]
         initial_data = -175.0 * numpy.cos(phase)
@@ -132,21 +132,19 @@ class SecamModem:
         return filter
 
     def _demodulate_dr(self, frequencies):
-        min_freq = SecamModem.DR_FC - (SecamModem.MAX_FREQ - SecamModem.DR_FC)
+        min_freq = self._dr_fc - (self._max_freq - self._dr_fc)
         return self._reverse_chroma_precorrect(
-            (numpy.minimum(numpy.maximum(frequencies, min_freq),
-                           SecamModem.MAX_FREQ) - SecamModem.DR_FC) / SecamModem.DR_DEV)
+            (numpy.minimum(numpy.maximum(frequencies, min_freq), self._max_freq) - self._dr_fc) / self._dr_dev)
 
     def _demodulate_db(self, frequencies):
-        max_freq = SecamModem.DB_FC + (SecamModem.DB_FC - SecamModem.MIN_FREQ)
-        return self._reverse_chroma_precorrect((numpy.minimum(numpy.maximum(frequencies, SecamModem.MIN_FREQ),
-                                                              max_freq) - SecamModem.DB_FC) / SecamModem.DB_DEV)
+        max_freq = self._db_fc + (self._db_fc - self._min_freq)
+        return self._reverse_chroma_precorrect(
+            (numpy.minimum(numpy.maximum(frequencies, self._min_freq), max_freq) - self._db_fc) / self._db_dev)
 
-    @staticmethod
-    def _modulate_chroma(start_phase, frequencies):
-        phase_shift = 2.0 * numpy.pi * frequencies / 13500000.0
+    def _modulate_chroma(self, start_phase, frequencies_by_fnyq):
+        phase_shift = numpy.pi * frequencies_by_fnyq
         phase = (start_phase + numpy.cumsum(phase_shift)) % (2.0 * numpy.pi)
-        bigF = frequencies / 4286000.0 - 4286000.0 / frequencies
+        bigF = frequencies_by_fnyq / self._bell_freq - self._bell_freq / frequencies_by_fnyq
         bigG = 255.0 * 0.115 * (1.0 + 16.0j * bigF) / (1.0 + 1.26j * bigF)
         return numpy.real(bigG) * numpy.cos(phase) - numpy.imag(bigG) * numpy.sin(phase)
 
@@ -175,23 +173,26 @@ class SecamModem:
     def modulate(self, frame, line, r, g, b):
         luma, dr, db = SecamModem._encode_secam_components(r, g, b)
         if not SecamModem._is_alternate_line(frame, line):
-            chroma_frequencies = self.DR_FC + self.DR_DEV * self._chroma_precorrect(self._chroma_precorrect_lowpass(dr))
+            chroma_frequencies_by_fnyq = self._dr_fc + self._dr_dev * self._chroma_precorrect(
+                self._chroma_precorrect_lowpass(dr))
         else:
-            chroma_frequencies = self.DB_FC + self.DB_DEV * self._chroma_precorrect(self._chroma_precorrect_lowpass(db))
-        chroma_frequencies = numpy.minimum(numpy.maximum(chroma_frequencies, self.MIN_FREQ), self.MAX_FREQ)
+            chroma_frequencies_by_fnyq = self._db_fc + self._db_dev * self._chroma_precorrect(
+                self._chroma_precorrect_lowpass(db))
+        chroma_frequencies_by_fnyq = numpy.minimum(numpy.maximum(chroma_frequencies_by_fnyq, self._min_freq),
+                                                   self._max_freq)
         start_phase = numpy.pi if self._start_phase_inverted(frame, line) else 0.0
-        chroma = SecamModem._modulate_chroma(start_phase, chroma_frequencies)
+        chroma = self._modulate_chroma(start_phase, chroma_frequencies_by_fnyq)
 
         return luma + chroma
 
     @staticmethod
-    def _fm_decoder(fc, dev):
-        lowpass = utils.iirfilter(6, (2.0 * fc - dev) / 13500000.0, rs=48.0, btype='lowpass', ftype='cheby2')
+    def _fm_decoder(fc_by_fnyq, dev_by_fnyq):
+        lowpass = utils.iirfilter(6, fc_by_fnyq - 0.5 * dev_by_fnyq, rs=48.0, btype='lowpass', ftype='cheby2')
 
         def decode(data):
             # Assuming the signal is already filtered
             data2x = scipy.signal.resample_poly(data, up=2, down=1)
-            phase = numpy.linspace(start=0.0, stop=len(data2x) * numpy.pi * fc / 13500000.0, num=len(data2x),
+            phase = numpy.linspace(start=0.0, stop=len(data2x) * 0.5 * numpy.pi * fc_by_fnyq, num=len(data2x),
                                    endpoint=False)
             cosine2x = lowpass(data2x * numpy.cos(phase))
             sine2x = lowpass(data2x * numpy.sin(phase))
@@ -201,7 +202,7 @@ class SecamModem:
             phases = numpy.angle(data)
             phase_shift = numpy.diff(numpy.concatenate((phases[0:1], phases)))
             phase_shift = (phase_shift + numpy.pi) % (2.0 * numpy.pi) - numpy.pi
-            return fc + (0.5 * 13500000.0 / numpy.pi) * phase_shift
+            return fc_by_fnyq + phase_shift / numpy.pi
 
         return decode
 
@@ -220,7 +221,7 @@ class SecamModem:
         luma = self._chroma_demod_luma_filter(composite)
         chroma = self._chroma_demod_chroma_filter(composite)
         chroma = self._chroma_demod_comb(chroma, self._start_phase_inverted(frame, line))
-        chroma = SecamModem._highpass(chroma, 0.5 * 4286000.0 / 13500000.0)
+        chroma = SecamModem._highpass(chroma, 0.25 * self._bell_freq)
 
         frequencies = chroma_demod(chroma)
         if not SecamModem._is_alternate_line(frame, line):

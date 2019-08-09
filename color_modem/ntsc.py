@@ -17,8 +17,8 @@ NtscVariant.NTSC361 = NtscVariant(fsc=229.5 * 15750.0 * 1000.0 / 1001.0, line_co
 
 
 class NtscModem(AbstractQamColorModem):
-    def __init__(self, variant=NtscVariant.NTSC):
-        super(NtscModem, self).__init__(variant.fsc, 1300000.0, 3600000.0, variant.line_count)
+    def __init__(self, variant=NtscVariant.NTSC, fs=13500000.0):
+        super(NtscModem, self).__init__(fs, variant.fsc, 1300000.0, 3600000.0, variant.line_count)
 
     @staticmethod
     def encode_yuv(r, g, b):
