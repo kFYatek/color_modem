@@ -19,12 +19,12 @@ class SecamModem:
             self._start_phase_inversions = [False, False, True, False, False, True]
         else:
             self._start_phase_inversions = [False, False, False, True, True, True]
-        self._chroma_demod_comb = self._feedback_comb(0.8275, 13.5 / 4.286, 3)
+        self._chroma_demod_comb = self._feedback_comb(0.8275, 13500000.0 / 4286000.0, 3)
 
-        self._chroma_precorrect_lowpass = utils.iirdesign(wp=2.0 * 1300.0 / 13500.0, ws=2.0 * 3500.0 / 13500.0,
-                                                          gpass=3.0, gstop=30.0)
+        self._chroma_precorrect_lowpass = utils.iirdesign(wp=2.0 * 1300000.0 / 13500000.0,
+                                                          ws=2.0 * 3500000.0 / 13500000.0, gpass=3.0, gstop=30.0)
         self._chroma_precorrect, self._reverse_chroma_precorrect = SecamModem._chroma_precorrect_design(
-            3.0 * 85.0 / 13500.0)
+            3.0 * 85000.0 / 13500000.0)
 
         center = (SecamModem.MIN_FREQ + SecamModem.MAX_FREQ) / 13500000.0
         dev = (SecamModem.MAX_FREQ - SecamModem.MIN_FREQ) / 13500000.0
@@ -220,7 +220,7 @@ class SecamModem:
         luma = self._chroma_demod_luma_filter(composite)
         chroma = self._chroma_demod_chroma_filter(composite)
         chroma = self._chroma_demod_comb(chroma, self._start_phase_inverted(frame, line))
-        chroma = SecamModem._highpass(chroma, 0.5 * 4.286 / 13.5)
+        chroma = SecamModem._highpass(chroma, 0.5 * 4286000.0 / 13500000.0)
 
         frequencies = chroma_demod(chroma)
         if not SecamModem._is_alternate_line(frame, line):
