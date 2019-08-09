@@ -7,18 +7,18 @@ import scipy.signal
 
 from color_modem import qam, comb, utils
 
-PalVariant = collections.namedtuple('PalVariant', ['fs', 'line_count', 'bandwidth20db'])
+PalVariant = collections.namedtuple('PalVariant', ['fsc', 'line_count', 'bandwidth20db'])
 
-PalVariant.PAL = PalVariant(fs=4433618.75, line_count=625, bandwidth20db=4000000.0)
-PalVariant.PAL_M = PalVariant(fs=227.25 * 15750.0 * 1000.0 / 1001.0, line_count=525, bandwidth20db=3600000.0)
-PalVariant.PAL_N = PalVariant(fs=3582056.25, line_count=625, bandwidth20db=3600000.0)
+PalVariant.PAL = PalVariant(fsc=4433618.75, line_count=625, bandwidth20db=4000000.0)
+PalVariant.PAL_M = PalVariant(fsc=227.25 * 15750.0 * 1000.0 / 1001.0, line_count=525, bandwidth20db=3600000.0)
+PalVariant.PAL_N = PalVariant(fsc=3582056.25, line_count=625, bandwidth20db=3600000.0)
 # PAL at exactly the NTSC carrier frequency
-PalVariant.PAL_FakeM = PalVariant(fs=227.5 * 15750.0 * 1000.0 / 1001.0, line_count=525, bandwidth20db=3600000.0)
+PalVariant.PAL_FakeM = PalVariant(fsc=227.5 * 15750.0 * 1000.0 / 1001.0, line_count=525, bandwidth20db=3600000.0)
 
 
 class PalSModem(qam.AbstractQamColorModem):
     def __init__(self, variant=PalVariant.PAL):
-        super(PalSModem, self).__init__(variant.fs, 1300000.0, variant.bandwidth20db, variant.line_count)
+        super(PalSModem, self).__init__(variant.fsc, 1300000.0, variant.bandwidth20db, variant.line_count)
 
     @staticmethod
     def encode_yuv(r, g, b):

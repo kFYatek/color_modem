@@ -7,18 +7,18 @@ import numpy
 from color_modem import comb
 from color_modem.qam import AbstractQamColorModem
 
-NtscVariant = collections.namedtuple('NtscVariant', ['fs', 'line_count'])
+NtscVariant = collections.namedtuple('NtscVariant', ['fsc', 'line_count'])
 
-NtscVariant.NTSC = NtscVariant(fs=227.5 * 15750.0 * 1000.0 / 1001.0, line_count=525)
-NtscVariant.NTSC_I = NtscVariant(fs=4429687.5, line_count=625)
-NtscVariant.NTSC443 = NtscVariant(fs=4433618.75, line_count=525)
+NtscVariant.NTSC = NtscVariant(fsc=227.5 * 15750.0 * 1000.0 / 1001.0, line_count=525)
+NtscVariant.NTSC_I = NtscVariant(fsc=4429687.5, line_count=625)
+NtscVariant.NTSC443 = NtscVariant(fsc=4433618.75, line_count=525)
 # This is the weird mode that Raspberry Pi actually outputs when nominally set to PAL-M
-NtscVariant.NTSC361 = NtscVariant(fs=229.5 * 15750.0 * 1000.0 / 1001.0, line_count=525)
+NtscVariant.NTSC361 = NtscVariant(fsc=229.5 * 15750.0 * 1000.0 / 1001.0, line_count=525)
 
 
 class NtscModem(AbstractQamColorModem):
     def __init__(self, variant=NtscVariant.NTSC):
-        super(NtscModem, self).__init__(variant.fs, 1300000.0, 3600000.0, variant.line_count)
+        super(NtscModem, self).__init__(variant.fsc, 1300000.0, 3600000.0, variant.line_count)
 
     @staticmethod
     def encode_yuv(r, g, b):
