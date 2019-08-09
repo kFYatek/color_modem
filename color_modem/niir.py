@@ -18,18 +18,14 @@ class NiirModem:
         self._frame_shift = numpy.pi * frame_shift_by_pi
 
         self._chroma_precorrect_lowpass = utils.iirdesign(2.0 * 1300000.0 / fs, 2.0 * 4000000.0 / fs, 3.0, 20.0)
-        self._demodulate_resample_factor = 8
+        self._demodulate_resample_factor = 4
         self._demodulate_upsampled_baseband_filter, self._demodulate_upsampled_filter = NiirModem._demodulate_am_design(
             2.0 * 4433618.75 / fs, 2.0 * 1300000.0 / fs, 2.0 * 4000000.0 / fs, 3.0, 20.0,
             self._demodulate_resample_factor)
 
-        self._carrier_up_notch = utils.iirfilter(2, numpy.array([4433618.75 - 9375.0, 4433618.75 + 9375.0]) / (
-                0.5 * fs * self._demodulate_resample_factor), ftype='bessel', shift=False)
-
         self._last_frame = -1
         self._last_line = -1
-        self._last_modulated_up = None
-        self._last_saturation_plus_ep_up = None
+        self._last_phasemod_up = None
 
     @staticmethod
     def _encode_niir_components(r, g, b):
@@ -112,56 +108,52 @@ class NiirModem:
                                                                 ws / resample_factor, 0.5 * gpass, 0.5 * gstop)
 
     def demodulate(self, frame, line, composite):
-        if frame != self._last_frame or line != self._last_line + 2 \
-                or self._last_modulated_up is None or self._last_saturation_plus_ep_up is None:
-            last_modulated = self._modulate_precorrected_chroma(frame, line - 2, 25.5 * numpy.ones(len(composite)), 0.0)
-            self._last_modulated_up = self._demodulate_upsampled_filter(
+        if frame != self._last_frame or line != self._last_line + 2 or self._last_phasemod_up is None:
+            last_modulated = self._modulate_precorrected_chroma(frame, line - 2, numpy.ones(len(composite)), 0.0)
+            self._last_phasemod_up = self._demodulate_upsampled_filter(
                 scipy.signal.resample_poly(last_modulated, up=self._demodulate_resample_factor, down=1))
-            self._last_saturation_plus_ep_up = 25.5 * numpy.ones(self._demodulate_resample_factor * len(composite))
 
         upsampled = scipy.signal.resample_poly(composite, up=self._demodulate_resample_factor, down=1)
         modulated_up = self._demodulate_upsampled_filter(upsampled)
         demod_up = 0.5 * numpy.pi * numpy.abs(modulated_up)
         saturation_plus_ep_up = self._demodulate_upsampled_baseband_filter(demod_up)
+        phasemod_up = modulated_up / saturation_plus_ep_up
 
         if not self._is_alternate_line(frame, line):
-            carrier_up = self._carrier_up_notch(self._last_modulated_up)
-            huemod_up = modulated_up
-            huemod_amplitude = saturation_plus_ep_up
+            carrier_up = self._last_phasemod_up
+            huemod_up = phasemod_up
         else:
-            carrier_up = self._carrier_up_notch(modulated_up)
-            huemod_up = self._last_modulated_up
-            huemod_amplitude = self._last_saturation_plus_ep_up
+            carrier_up = phasemod_up
+            huemod_up = self._last_phasemod_up
 
-        if not self._is_alternate_line(frame, line):
-            carrier_up = -carrier_up
 
         shifted_carrier_up = carrier_up[0:-1] + carrier_up[1:]
         altcarrier_up = -numpy.concatenate((numpy.zeros(1), numpy.diff(shifted_carrier_up), numpy.zeros(1)))
 
-        carrier_up /= numpy.max(numpy.abs(carrier_up))
-        cosphi_up = huemod_up * carrier_up / huemod_amplitude
-        cosphi_up = numpy.minimum(numpy.maximum(cosphi_up, -1.0), 1.0)
+        if not self._is_alternate_line(frame, line):
+            carrier_up = -carrier_up
+            altcarrier_up = -altcarrier_up
 
-        altcarrier_up /= numpy.max(numpy.abs(altcarrier_up))
-        sinphi_up = huemod_up * altcarrier_up / huemod_amplitude
-        sinphi_up = numpy.minimum(numpy.maximum(sinphi_up, -1.0), 1.0)
+        cosphi_up = huemod_up * carrier_up
+        sinphi_up = huemod_up * altcarrier_up
 
         cosphi = scipy.signal.resample_poly(cosphi_up, up=1, down=self._demodulate_resample_factor)
         sinphi = scipy.signal.resample_poly(sinphi_up, up=1, down=self._demodulate_resample_factor)
+        normalizer = numpy.sqrt(sinphi * sinphi + cosphi * cosphi)
+        sinphi /= normalizer
+        cosphi /= normalizer
         phi = numpy.arctan2(sinphi, cosphi)
 
         saturation_plus_ep = scipy.signal.resample_poly(saturation_plus_ep_up, up=1,
                                                         down=self._demodulate_resample_factor)
         saturation = numpy.maximum(saturation_plus_ep - 25.5, 0.0)
-        db = saturation * numpy.sin(phi)
-        dr = saturation * numpy.cos(phi)
-        updb = saturation_plus_ep * numpy.sin(phi)
-        updr = saturation_plus_ep * numpy.cos(phi)
+        db = saturation * sinphi
+        dr = saturation * cosphi
+        updb = saturation_plus_ep * sinphi
+        updr = saturation_plus_ep * cosphi
         luma = composite - self._modulate_precorrected_chroma(frame, line, updb, updr)
 
-        self._last_modulated_up = modulated_up
-        self._last_saturation_plus_ep_up = saturation_plus_ep_up
+        self._last_phasemod_up = phasemod_up
         self._last_frame = frame
         self._last_line = line
         return self._decode_niir_components(luma, db, dr)
