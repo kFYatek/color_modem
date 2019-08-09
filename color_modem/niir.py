@@ -39,7 +39,7 @@ class NiirModem:
         b = numpy.array(b, copy=False)
         luma = 0.299 * r + 0.587 * g + 0.114 * b
         dr = 0.6149122807017545 * r - 0.5149122807017544 * g - 0.1 * b
-        db = -0.1472906403940887 * r - 0.2891625615763547 * g + 0.4364532019704434 * b
+        db = 0.1472906403940887 * r + 0.2891625615763547 * g - 0.4364532019704434 * b
         return luma, dr, db
 
     @staticmethod
@@ -49,8 +49,8 @@ class NiirModem:
         dr = numpy.array(dr, copy=False)
         db = numpy.array(db, copy=False)
         r = luma + 1.14 * dr
-        g = luma - 0.5806814310051107 * dr - 0.3942419080068143 * db
-        b = luma + 2.03 * db
+        g = luma - 0.5806814310051107 * dr + 0.3942419080068143 * db
+        b = luma - 2.03 * db
         return r, g, b
 
     def _calculate_start_phase(self, frame, line):
@@ -84,7 +84,7 @@ class NiirModem:
         phase = numpy.linspace(start=start_phase, stop=start_phase + len(updb) * 2.0 * self._carrier_phase_step,
                                num=len(updb), endpoint=False) % (2.0 * numpy.pi)
         if not self._is_alternate_line(frame, line):
-            return updr * numpy.cos(phase) - updb * numpy.sin(phase)
+            return updr * numpy.cos(phase) + updb * numpy.sin(phase)
         else:
             return -numpy.sqrt(updr * updr + updb * updb) * numpy.sin(phase)
 
@@ -137,7 +137,7 @@ class NiirModem:
             carrier_up = -carrier_up
 
         shifted_carrier_up = carrier_up[0:-1] + carrier_up[1:]
-        altcarrier_up = numpy.concatenate((numpy.zeros(1), numpy.diff(shifted_carrier_up), numpy.zeros(1)))
+        altcarrier_up = -numpy.concatenate((numpy.zeros(1), numpy.diff(shifted_carrier_up), numpy.zeros(1)))
 
         carrier_up /= numpy.max(numpy.abs(carrier_up))
         cosphi_up = huemod_up * carrier_up / huemod_amplitude
