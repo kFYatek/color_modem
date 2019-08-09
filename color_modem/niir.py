@@ -10,7 +10,7 @@ class NiirModem:
     def __init__(self, fs=13500000.0):
         self._carrier_phase_step = numpy.pi * 4433618.75 / fs
 
-        line_shift_by_pi = (2.0 * 864 * 4433618.75 / fs) % 2.0
+        line_shift_by_pi = ((2.0 * 4433618.75) / (25.0 * 625.0)) % 2.0
         self.line_shift = numpy.pi * line_shift_by_pi
         odd_numbered_digital_line_shift_by_pi = (line_shift_by_pi * 313) % 2.0
         self._odd_numbered_digital_line_shift = numpy.pi * odd_numbered_digital_line_shift_by_pi
