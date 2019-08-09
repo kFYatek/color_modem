@@ -45,11 +45,11 @@ class NtscModem(AbstractQamColorModem):
         return r, g, b
 
     def modulate_yuv(self, frame, line, y, u, v):
-        start_phase = self.calculate_start_phase(frame, line)
+        start_phase = self.config.start_phase(frame, line)
         return self.qam.modulate(start_phase, y, u, v)
 
     def demodulate_yuv(self, frame, line, *args, **kwargs):
-        start_phase = self.calculate_start_phase(frame, line)
+        start_phase = self.config.start_phase(frame, line)
         return self.qam.demodulate(start_phase, *args, **kwargs)
 
     @staticmethod
@@ -89,7 +89,7 @@ class NtscCombModem(comb.AbstractCombModem):
         if not numpy.isfinite(self._factor):
             return self.backend.demodulate_yuv(frame, line, curr, strip_chroma=False)
 
-        diff_phase = self.backend.calculate_start_phase(frame, line) - 0.5 * self.backend.config.line_shift
+        diff_phase = self.backend.config.start_phase(frame, line) - 0.5 * self.backend.config.line_shift
         if diff_phase < 0.0:
             diff_phase += 2.0 * numpy.pi
 

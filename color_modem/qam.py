@@ -36,6 +36,13 @@ class QamConfig(collections.namedtuple('QamConfig', ['fsc', 'bandwidth3db', 'ban
     def frame_cycle(self):
         return fractions.Fraction(self.fsc / self.framerate).denominator
 
+    def start_phase(self, frame, line):
+        frame %= self.frame_cycle
+        frame_shift = (frame * self.frame_shift) % (2.0 * numpy.pi)
+        field_shift = (line % 2) * self.field_shift
+        line_shift = ((line // 2) * self.line_shift) % (2.0 * numpy.pi)
+        return (frame_shift + field_shift + line_shift) % (2.0 * numpy.pi)
+
     def is_alternate_line(self, frame, line):
         # For 525-line system:
         #
@@ -106,13 +113,6 @@ class AbstractQamColorModem(object):
         self.config = config
         self.qam = QamColorModem(2.0 * config.fsc / fs, 2.0 * config.bandwidth3db / fs, 2.0 * config.bandwidth20db / fs,
                                  3.0, 20.0)
-
-    def calculate_start_phase(self, frame, line):
-        frame %= self.config.frame_cycle
-        frame_shift = (frame * self.config.frame_shift) % (2.0 * numpy.pi)
-        field_shift = (line % 2) * self.config.field_shift
-        line_shift = ((line // 2) * self.config.line_shift) % (2.0 * numpy.pi)
-        return (frame_shift + field_shift + line_shift) % (2.0 * numpy.pi)
 
     def modulate(self, frame, line, r, g, b):
         return self.modulate_yuv(frame, line, *self.encode_yuv(r, g, b))

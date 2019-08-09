@@ -43,13 +43,13 @@ class PalSModem(qam.AbstractQamColorModem):
         return r, g, b
 
     def modulate_yuv(self, frame, line, y, u, v):
-        start_phase = self.calculate_start_phase(frame, line)
+        start_phase = self.config.start_phase(frame, line)
         if self.config.is_alternate_line(frame, line):
             v = -numpy.array(v, copy=False)
         return self.qam.modulate(start_phase, y, u, v)
 
     def demodulate_yuv(self, frame, line, *args, **kwargs):
-        start_phase = self.calculate_start_phase(frame, line)
+        start_phase = self.config.start_phase(frame, line)
         y, u, v = self.qam.demodulate(start_phase, *args, **kwargs)
         if self.config.is_alternate_line(frame, line):
             v = -numpy.array(v, copy=False)
@@ -121,7 +121,7 @@ class PalDModem(comb.AbstractCombModem):
         last = numpy.array(last, copy=False)
         curr = numpy.array(curr, copy=False)
 
-        diff_phase = (self.backend.calculate_start_phase(frame, line) +
+        diff_phase = (self.backend.config.start_phase(frame, line) +
                       self.backend.qam.extract_chroma_phase_shift - 0.5 * self.backend.config.line_shift) % (
                              2.0 * numpy.pi)
 
@@ -215,7 +215,7 @@ class Pal3DModem(PalDModem):
             sumsig = curr_diff + self._last_diff
             diffsig = curr_diff - self._last_diff
 
-            start_phase = self.backend.calculate_start_phase(frame, line - 2)
+            start_phase = self.backend.config.start_phase(frame, line - 2)
             sumsig = self.backend.qam.demodulate(start_phase, sumsig, strip_chroma=False)
             diffsig = self.backend.qam.demodulate(start_phase, diffsig, strip_chroma=False)
 
