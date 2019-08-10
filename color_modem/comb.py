@@ -49,7 +49,8 @@ class SimpleCombModem(object):
 
     def __init__(self, backend, avg=None, delay=False):
         self.backend = backend
-        self.demodulation_delay = 1 if delay else 0
+        self._own_delay = 1 if delay else 0
+        self.demodulation_delay = getattr(backend, 'demodulation_delay', 0) + self._own_delay
         self._last_frame = -1
         self._last_line = -1
         self._last_demodulated = None
@@ -71,12 +72,11 @@ class SimpleCombModem(object):
             y, u, v = curr
         else:
             curr = self.backend.demodulate_yuv(frame, line, composite, strip_chroma=False, *args, **kwargs)
-            y = self._last_demodulated[0] if self.demodulation_delay else curr[0]
+            y = self._last_demodulated[0] if self._own_delay else curr[0]
             u = self._avg(self._last_demodulated[1], curr[1])
             v = self._avg(self._last_demodulated[2], curr[2])
             if strip_chroma:
-                y = y - self.backend.modulate_yuv(frame, line - 2 * self.demodulation_delay,
-                                                  numpy.zeros(len(composite)), u, v)
+                y = y - self.backend.modulate_yuv(frame, line - 2 * self._own_delay, numpy.zeros(len(composite)), u, v)
         self._last_frame = frame
         self._last_line = line
         self._last_demodulated = curr
