@@ -33,7 +33,10 @@ def main():
     modem = SecamModem()
 
     #### NIIR (SECAM IV)
+    # standard
     # modem = NiirModem()
+    # comb filter - turned out to be a bad idea
+    # modem = SimpleCombModem(NiirModem(), avg=lambda a, b: 0.5 * (a + b))
 
     img_modem = ImageModem(modem)
     img = Image.open(sys.argv[1])

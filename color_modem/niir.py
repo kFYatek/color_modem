@@ -7,8 +7,9 @@ from color_modem import utils, pal
 
 
 class NiirModem:
-    def __init__(self, config=pal.PalVariant.PAL, fs=13500000.0):
+    def __init__(self, config=pal.PalVariant.PAL, fs=13500000.0, noise_level=0.0):
         self._carrier_phase_step = 2.0 * numpy.pi * config.fsc / fs
+        self._noise_level = noise_level
         self.config = config
 
         self._chroma_precorrect_lowpass = utils.iirdesign(2.0 * config.bandwidth3db / fs,
@@ -33,6 +34,15 @@ class NiirModem:
         dr = 0.6149122807017545 * r - 0.5149122807017544 * g - 0.1 * b
         return luma, db, dr
 
+    def encode_yuv(self, r, g, b):
+        luma, db, dr = NiirModem._encode_niir_components(r, g, b)
+        saturation = numpy.sqrt(db * db + dr * dr) + 25.5
+        if self._noise_level != 0.0:
+            db += (numpy.random.random_sample(len(db)) - 0.5) * self._noise_level
+            dr += (numpy.random.random_sample(len(dr)) - 0.5) * self._noise_level
+        hue = numpy.arctan2(db, dr)
+        return luma, saturation * numpy.sin(hue), saturation * numpy.cos(hue)
+
     @staticmethod
     def _decode_niir_components(luma, db, dr):
         assert len(luma) == len(db) == len(dr)
@@ -44,6 +54,12 @@ class NiirModem:
         b = luma - 2.03 * db
         return r, g, b
 
+    @staticmethod
+    def decode_yuv(luma, db, dr):
+        saturation = numpy.maximum(numpy.sqrt(db * db + dr * dr) - 25.5, 0.0)
+        hue = numpy.arctan2(db, dr)
+        return NiirModem._decode_niir_components(luma, saturation * numpy.sin(hue), saturation * numpy.cos(hue))
+
     def _modulate_precorrected_chroma(self, frame, line, updb, updr):
         start_phase = self.config.start_phase(frame, line)
         phase = numpy.linspace(start=start_phase, stop=start_phase + len(updb) * self._carrier_phase_step,
@@ -53,21 +69,14 @@ class NiirModem:
         else:
             return -numpy.sqrt(updb * updb + updr * updr) * numpy.sin(phase)
 
-    def _modulate_chroma(self, frame, line, db, dr):
-        assert len(db) == len(dr)
-        saturation = numpy.sqrt(db * db + dr * dr) + 25.5
-        hue = numpy.arctan2(db + (numpy.random.random_sample(len(db)) - 0.5) / 65536.0,
-                            dr + (numpy.random.random_sample(len(dr)) - 0.5) / 65536.0)
-        dbep = saturation * numpy.sin(hue)
-        drep = saturation * numpy.cos(hue)
-        dbep = self._chroma_precorrect_lowpass(dbep)
-        drep = self._chroma_precorrect_lowpass(drep)
-        return self._modulate_precorrected_chroma(frame, line, dbep, drep)
-
     def modulate(self, frame, line, r, g, b):
+        return self.modulate_yuv(frame, line, *self.encode_yuv(r, g, b))
+
+    def modulate_yuv(self, frame, line, luma, db, dr):
         # TODO: Take the next line's hue into consideration when encoding
-        luma, db, dr = NiirModem._encode_niir_components(r, g, b)
-        chroma = self._modulate_chroma(frame, line, db, dr)
+        db = self._chroma_precorrect_lowpass(db)
+        dr = self._chroma_precorrect_lowpass(dr)
+        chroma = self._modulate_precorrected_chroma(frame, line, db, dr)
         return luma + chroma
 
     @staticmethod
@@ -75,7 +84,10 @@ class NiirModem:
         return utils.iirdesign(wp / resample_factor, ws / resample_factor, gpass, gstop), utils.iirdesign_wc(
             wc / resample_factor, wp / resample_factor, ws / resample_factor, gpass, gstop)
 
-    def demodulate(self, frame, line, composite):
+    def demodulate(self, frame, line, *args, **kwargs):
+        return self.decode_yuv(*self.demodulate_yuv(frame, line, *args, **kwargs))
+
+    def demodulate_yuv(self, frame, line, composite, strip_chroma=True):
         if frame != self._last_frame or line != self._last_line + 2 or self._last_phasemod_up is None:
             last_modulated = self._modulate_precorrected_chroma(frame, line - 2, numpy.ones(len(composite)), 0.0)
             self._last_phasemod_up = self._demodulate_upsampled_filter(
@@ -84,8 +96,8 @@ class NiirModem:
         upsampled = scipy.signal.resample_poly(composite, up=self._demodulate_resample_factor, down=1)
         modulated_up = self._demodulate_upsampled_filter(upsampled)
         demod_up = 0.5 * numpy.pi * numpy.abs(modulated_up)
-        saturation_plus_ep_up = self._demodulate_upsampled_baseband_filter(demod_up)
-        phasemod_up = modulated_up / saturation_plus_ep_up
+        saturation_up = self._demodulate_upsampled_baseband_filter(demod_up)
+        phasemod_up = modulated_up / saturation_up
 
         if not self.config.is_alternate_line(frame, line):
             carrier_up = self._last_phasemod_up
@@ -112,19 +124,17 @@ class NiirModem:
         sinphi, cosphi = -cosphi * numpy.sin(shift) - sinphi * numpy.cos(shift), \
                          sinphi * numpy.sin(shift) - cosphi * numpy.cos(shift)
 
-        saturation_plus_ep = scipy.signal.resample_poly(saturation_plus_ep_up, up=1,
-                                                        down=self._demodulate_resample_factor)
-        saturation = numpy.maximum(saturation_plus_ep - 25.5, 0.0)
+        saturation = scipy.signal.resample_poly(saturation_up, up=1, down=self._demodulate_resample_factor)
         db = saturation * sinphi
         dr = saturation * cosphi
-        updb = saturation_plus_ep * sinphi
-        updr = saturation_plus_ep * cosphi
-        luma = composite - self._modulate_precorrected_chroma(frame, line, updb, updr)
+        luma = composite
+        if strip_chroma:
+            luma = luma - self._modulate_precorrected_chroma(frame, line, db, dr)
 
         self._last_phasemod_up = phasemod_up
         self._last_frame = frame
         self._last_line = line
-        return self._decode_niir_components(luma, db, dr)
+        return luma, db, dr
 
     @staticmethod
     def encode_composite_level(value):
