@@ -8,12 +8,12 @@ from color_modem import utils, pal
 
 class NiirModem:
     def __init__(self, config=pal.PalVariant.PAL, fs=13500000.0):
-        self._carrier_phase_step = numpy.pi * config.fsc / fs
+        self._carrier_phase_step = 2.0 * numpy.pi * config.fsc / fs
         self.config = config
 
         self._chroma_precorrect_lowpass = utils.iirdesign(2.0 * config.bandwidth3db / fs,
                                                           2.0 * config.bandwidth20db / fs, 3.0, 20.0)
-        self._demodulate_resample_factor = 4
+        self._demodulate_resample_factor = 3
         self._demodulate_upsampled_baseband_filter, self._demodulate_upsampled_filter = NiirModem._demodulate_am_design(
             2.0 * config.fsc / fs, 2.0 * config.bandwidth3db / fs, 2.0 * config.bandwidth20db / fs, 3.0, 20.0,
             self._demodulate_resample_factor)
@@ -46,7 +46,7 @@ class NiirModem:
 
     def _modulate_precorrected_chroma(self, frame, line, updb, updr):
         start_phase = self.config.start_phase(frame, line)
-        phase = numpy.linspace(start=start_phase, stop=start_phase + len(updb) * 2.0 * self._carrier_phase_step,
+        phase = numpy.linspace(start=start_phase, stop=start_phase + len(updb) * self._carrier_phase_step,
                                num=len(updb), endpoint=False) % (2.0 * numpy.pi)
         if not self.config.is_alternate_line(frame, line):
             return updb * numpy.sin(phase) + updr * numpy.cos(phase)
@@ -72,9 +72,8 @@ class NiirModem:
 
     @staticmethod
     def _demodulate_am_design(wc, wp, ws, gpass, gstop, resample_factor):
-        return utils.iirdesign(wp / resample_factor, ws / resample_factor, 0.5 * gpass,
-                               0.5 * gstop), utils.iirdesign_wc(wc / resample_factor, wp / resample_factor,
-                                                                ws / resample_factor, 0.5 * gpass, 0.5 * gstop)
+        return utils.iirdesign(wp / resample_factor, ws / resample_factor, gpass, gstop), utils.iirdesign_wc(
+            wc / resample_factor, wp / resample_factor, ws / resample_factor, gpass, gstop)
 
     def demodulate(self, frame, line, composite):
         if frame != self._last_frame or line != self._last_line + 2 or self._last_phasemod_up is None:
@@ -98,27 +97,28 @@ class NiirModem:
             shift = -self.config.line_shift
 
         shifted_carrier_up = carrier_up[0:-1] + carrier_up[1:]
-        altcarrier_up = numpy.concatenate((numpy.zeros(1), numpy.diff(shifted_carrier_up), numpy.zeros(1)))
+        altcarrier_up = numpy.concatenate((numpy.zeros(1), numpy.diff(shifted_carrier_up), numpy.zeros(
+            1))) * 0.5 * self._demodulate_resample_factor / self._carrier_phase_step
 
-        cosphi_up = huemod_up * carrier_up
-        sinphi_up = huemod_up * altcarrier_up
+        sinphi_up = huemod_up * carrier_up
+        cosphi_up = huemod_up * altcarrier_up
 
-        cosphi = scipy.signal.resample_poly(cosphi_up, up=1, down=self._demodulate_resample_factor)
         sinphi = scipy.signal.resample_poly(sinphi_up, up=1, down=self._demodulate_resample_factor)
-        normalizer = numpy.sqrt(sinphi * sinphi + cosphi * cosphi)
-        sinphi /= normalizer
+        cosphi = scipy.signal.resample_poly(cosphi_up, up=1, down=self._demodulate_resample_factor)
+        normalizer = numpy.sqrt(cosphi * cosphi + sinphi * sinphi)
         cosphi /= normalizer
+        sinphi /= normalizer
 
-        cosphi, sinphi = cosphi * numpy.cos(shift) - sinphi * numpy.sin(shift), \
-                         cosphi * numpy.sin(shift) + sinphi * numpy.cos(shift)
+        sinphi, cosphi = -cosphi * numpy.sin(shift) - sinphi * numpy.cos(shift), \
+                         sinphi * numpy.sin(shift) - cosphi * numpy.cos(shift)
 
         saturation_plus_ep = scipy.signal.resample_poly(saturation_plus_ep_up, up=1,
                                                         down=self._demodulate_resample_factor)
         saturation = numpy.maximum(saturation_plus_ep - 25.5, 0.0)
-        db = saturation * cosphi
-        dr = saturation * sinphi
-        updb = saturation_plus_ep * cosphi
-        updr = saturation_plus_ep * sinphi
+        db = saturation * sinphi
+        dr = saturation * cosphi
+        updb = saturation_plus_ep * sinphi
+        updr = saturation_plus_ep * cosphi
         luma = composite - self._modulate_precorrected_chroma(frame, line, updb, updr)
 
         self._last_phasemod_up = phasemod_up
