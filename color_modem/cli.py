@@ -40,7 +40,7 @@ def main():
     # better quality modulation - hue correction
     # modem = HueCorrectingNiirModem()
     # standard
-    # modem = HueCorrectingNiirModem()
+    # modem = NiirModem()
     # comb filter - turned out to be a bad idea
     # modem = SimpleCombModem(NiirModem(), avg=lambda a, b: 0.5 * (a + b))
 

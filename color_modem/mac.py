@@ -87,18 +87,22 @@ class MacModem(object):
             composite = scipy.signal.resample_poly(composite, up=composite_resample_fraction.numerator,
                                                    down=composite_resample_fraction.denominator)
 
-        luma = 0.5 * numpy.ones(720)
-        chroma = 0.5 * numpy.ones(360)
+        luma = numpy.zeros(720)
+        chroma = numpy.zeros(360)
 
         luma[8:710] = composite[369:1071]
         luma[710] = (composite[1071] - 0.0625) / 0.875
         luma[711] = 2.0 * composite[1072] - 0.5
         luma[712] = 8.0 * composite[1073] - 3.5
+        luma[0:8] = luma[8]
+        luma[713:] = luma[712]
 
         chroma[2] = 8.0 * composite[15] - 3.5
         chroma[3] = 2.0 * composite[16] - 0.5
         chroma[4] = (composite[17] - 0.0625) / 0.875
         chroma[5:359] = composite[18:372]
+        chroma[0:1] = chroma[2]
+        chroma[359] = chroma[358]
 
         chroma = scipy.signal.resample_poly(chroma, up=2, down=1) - 0.5
 
