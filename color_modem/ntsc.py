@@ -25,9 +25,6 @@ class NtscModem(AbstractQamColorModem):
     @staticmethod
     def encode_yuv(r, g, b):
         assert len(r) == len(g) == len(b)
-        r = numpy.array(r, copy=False)
-        g = numpy.array(g, copy=False)
-        b = numpy.array(b, copy=False)
         y = 0.3 * r + 0.59 * g + 0.11 * b
         u = -0.1476019510016258 * r - 0.2893575108184752 * g + 0.436959461820101 * b
         v = 0.6183717846575098 * r - 0.5185533057776567 * g - 0.099818478879853 * b
@@ -36,9 +33,6 @@ class NtscModem(AbstractQamColorModem):
     @staticmethod
     def decode_yuv(y, u, v):
         assert len(y) == len(u) == len(v)
-        y = numpy.array(y, copy=False)
-        u = numpy.array(u, copy=False)
-        v = numpy.array(v, copy=False)
         r = 0.9999999999999998 * y + 1.133735501874552 * v + 0.007249535771601484 * u
         g = y - 0.5766784873222262 * v - 0.3834753199055935 * u
         b = y + 0.001087790524980047 * v + 2.037050709207452 * u
@@ -58,13 +52,12 @@ class NtscModem(AbstractQamColorModem):
         # white level: 1
         # black level: 0
         # min excursion: -164/714
-        adjusted = (value * 714.0 + 41820.0) / 1100.0
-        clamped = numpy.maximum(numpy.minimum(adjusted, 255.0), 0.0)
-        return numpy.uint8(numpy.rint(clamped))
+        return (value * 714.0 + 164.0) / 1100.0
+        return numpy.maximum(numpy.minimum(adjusted, 1.0), 0.0)
 
     @staticmethod
     def decode_composite_level(value):
-        return (value * 1100.0 - 41820.0) / 714.0
+        return (value * 1100.0 - 164.0) / 714.0
 
 
 class NtscCombModem(comb.AbstractCombModem):

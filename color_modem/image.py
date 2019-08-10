@@ -6,6 +6,10 @@ import numpy
 from PIL import Image
 
 
+def _as_bytes(array):
+    return numpy.uint8(numpy.rint(255.0 * numpy.maximum(numpy.minimum(array, 1.0), 0.0)))
+
+
 class ImageModem(object):
     def __init__(self, modem):
         self._modem = modem
@@ -18,18 +22,18 @@ class ImageModem(object):
         b = bytearray(img.getdata(2))
         output = numpy.zeros(img.width * img.height, dtype=numpy.uint8)
         for y in itertools.chain(range(0, img.height, 2), range(1, img.height, 2)):
-            output[img.width * y:img.width * (y + 1)] = self._modem.encode_composite_level(
-                self._modem.modulate(frame, y, r[img.width * y:img.width * (y + 1)],
-                                     g[img.width * y:img.width * (y + 1)], b[img.width * y:img.width * (y + 1)]))
+            r_line = numpy.array(r[img.width * y:img.width * (y + 1)]) / 255.0
+            g_line = numpy.array(g[img.width * y:img.width * (y + 1)]) / 255.0
+            b_line = numpy.array(b[img.width * y:img.width * (y + 1)]) / 255.0
+            output[img.width * y:img.width * (y + 1)] = _as_bytes(
+                self._modem.encode_composite_level(self._modem.modulate(frame, y, r_line, g_line, b_line)))
         return Image.frombytes('L', img.size, bytes(bytearray(output)))
 
     def demodulate(self, img, frame=0):
-        def as_bytes(array):
-            return numpy.uint8(numpy.rint(numpy.maximum(numpy.minimum(array, 255.0), 0.0)))
 
         if img.mode != 'L':
             img = img.convert('L')
-        composite = self._modem.decode_composite_level(numpy.array(img.getdata()))
+        composite = self._modem.decode_composite_level(numpy.array(img.getdata()) / 255.0)
         output = numpy.zeros(img.width * img.height * 3, dtype=numpy.uint8)
         demodulation_delay = getattr(self._modem, 'demodulation_delay', 0)
         for field in range(2):
@@ -39,9 +43,9 @@ class ImageModem(object):
                 input_y = y + 2 * demodulation_delay
                 while input_y >= img.height:
                     input_y -= 2
-                rLine, gLine, bLine = self._modem.demodulate(frame, y + 2 * demodulation_delay,
-                                                             composite[img.width * input_y:img.width * (input_y + 1)])
-                output[3 * img.width * y:3 * img.width * (y + 1):3] = as_bytes(rLine)
-                output[3 * img.width * y + 1:3 * img.width * (y + 1) + 1:3] = as_bytes(gLine)
-                output[3 * img.width * y + 2:3 * img.width * (y + 1) + 2:3] = as_bytes(bLine)
+                r_line, g_line, b_line = self._modem.demodulate(
+                    frame, y + 2 * demodulation_delay, composite[img.width * input_y:img.width * (input_y + 1)])
+                output[3 * img.width * y:3 * img.width * (y + 1):3] = _as_bytes(r_line)
+                output[3 * img.width * y + 1:3 * img.width * (y + 1) + 1:3] = _as_bytes(g_line)
+                output[3 * img.width * y + 2:3 * img.width * (y + 1) + 2:3] = _as_bytes(b_line)
         return Image.frombytes('RGB', img.size, bytes(bytearray(output)))

@@ -36,7 +36,7 @@ class NiirModem:
 
     def encode_yuv(self, r, g, b):
         luma, db, dr = NiirModem._encode_niir_components(r, g, b)
-        saturation = numpy.sqrt(db * db + dr * dr) + 25.5
+        saturation = numpy.sqrt(db * db + dr * dr) + 0.1
         if self._noise_level != 0.0:
             db += (numpy.random.random_sample(len(db)) - 0.5) * self._noise_level
             dr += (numpy.random.random_sample(len(dr)) - 0.5) * self._noise_level
@@ -56,7 +56,7 @@ class NiirModem:
 
     @staticmethod
     def decode_yuv(luma, db, dr):
-        saturation = numpy.maximum(numpy.sqrt(db * db + dr * dr) - 25.5, 0.0)
+        saturation = numpy.maximum(numpy.sqrt(db * db + dr * dr) - 0.1, 0.0)
         hue = numpy.arctan2(db, dr)
         return NiirModem._decode_niir_components(luma, saturation * numpy.sin(hue), saturation * numpy.cos(hue))
 
@@ -108,9 +108,9 @@ class NiirModem:
             huemod_up = self._last_phasemod_up
             shift = -self.config.line_shift
 
-        shifted_carrier_up = carrier_up[0:-1] + carrier_up[1:]
+        shifted_carrier_up = 0.5 * (carrier_up[0:-1] + carrier_up[1:])
         altcarrier_up = numpy.concatenate((numpy.zeros(1), numpy.diff(shifted_carrier_up), numpy.zeros(
-            1))) * 0.5 * self._demodulate_resample_factor / self._carrier_phase_step
+            1))) * self._demodulate_resample_factor / self._carrier_phase_step
 
         sinphi_up = huemod_up * carrier_up
         cosphi_up = huemod_up * altcarrier_up
@@ -142,10 +142,8 @@ class NiirModem:
         # white level: 1
         # black level: 0
         # min excursion: -233/700
-        adjusted = (value * 700.0 + 59415.0) / 1166.0
-        clamped = numpy.maximum(numpy.minimum(adjusted, 255.0), 0.0)
-        return numpy.uint8(numpy.rint(clamped))
+        return (value * 700.0 + 233.0) / 1166.0
 
     @staticmethod
     def decode_composite_level(value):
-        return (value * 1166.0 - 59415.0) / 700.0
+        return (value * 1166.0 - 233.0) / 700.0

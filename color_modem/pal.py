@@ -23,9 +23,6 @@ class PalSModem(qam.AbstractQamColorModem):
     @staticmethod
     def encode_yuv(r, g, b):
         assert len(r) == len(g) == len(b)
-        r = numpy.array(r, copy=False)
-        g = numpy.array(g, copy=False)
-        b = numpy.array(b, copy=False)
         y = 0.299 * r + 0.587 * g + 0.114 * b
         u = -0.147407 * r - 0.289391 * g + 0.436798 * b
         v = 0.614777 * r - 0.514799 * g - 0.099978 * b
@@ -34,9 +31,6 @@ class PalSModem(qam.AbstractQamColorModem):
     @staticmethod
     def decode_yuv(y, u, v):
         assert len(y) == len(u) == len(v)
-        y = numpy.array(y, copy=False)
-        u = numpy.array(u, copy=False)
-        v = numpy.array(v, copy=False)
         r = y + 1.140250855188141 * v
         g = y - 0.5808092090310976 * v - 0.3939307027516405 * u
         b = y + 2.028397565922921 * u
@@ -61,13 +55,11 @@ class PalSModem(qam.AbstractQamColorModem):
         # white level: 1
         # black level: 0
         # min excursion: -233/700
-        adjusted = (value * 700.0 + 59415.0) / 1166.0
-        clamped = numpy.maximum(numpy.minimum(adjusted, 255.0), 0.0)
-        return numpy.uint8(numpy.rint(clamped))
+        return (value * 700.0 + 233.0) / 1166.0
 
     @staticmethod
     def decode_composite_level(value):
-        return (value * 1166.0 - 59415.0) / 700.0
+        return (value * 1166.0 - 233.0) / 700.0
 
 
 class PalDModem(comb.AbstractCombModem):

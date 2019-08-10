@@ -38,15 +38,11 @@ class SecamModem:
         self._chroma_demod_db = SecamModem._fm_decoder(self._db_fc, self._db_dev)
         self._last_frame = -1
         self._last_line = -1
-        self._last_dr = None
-        self._last_db = None
+        self._last_chroma = None
 
     @staticmethod
     def _encode_secam_components(r, g, b):
         assert len(r) == len(g) == len(b)
-        r = numpy.array(r, copy=False)
-        g = numpy.array(g, copy=False)
-        b = numpy.array(b, copy=False)
         luma = 0.299 * r + 0.587 * g + 0.114 * b
         dr = -1.333302 * r + 1.116474 * g + 0.216828 * b
         db = -0.449995 * r - 0.883435 * g + 1.33343 * b
@@ -57,9 +53,6 @@ class SecamModem:
     @staticmethod
     def _decode_secam_components(luma, dr, db):
         assert len(luma) == len(dr) == len(db)
-        luma = numpy.array(luma, copy=False)
-        dr = numpy.array(dr, copy=False)
-        db = numpy.array(db, copy=False)
         r = luma - 0.5257623554153522 * dr
         g = luma + 0.2678074007993021 * dr - 0.1290417517983779 * db
         b = luma + 0.6644518272425249 * db
@@ -73,7 +66,7 @@ class SecamModem:
     @staticmethod
     def _chroma_precorrect_design(fc_by_fs):
         alpha = 1.0 / (2.0 * numpy.pi * fc_by_fs + 1.0)
-        forward_b = numpy.array([(2.0 * alpha + 1.0) / 255.0, (-3.0 * alpha) / 255.0])
+        forward_b = numpy.array([2.0 * alpha + 1.0, -3.0 * alpha])
         forward_a = numpy.array([1.0, -alpha])
         backward_b = numpy.array([1.0, forward_a[1]]) / forward_b[0]
         backward_a = numpy.array([1.0, forward_b[1] / forward_b[0]])
@@ -115,7 +108,7 @@ class SecamModem:
         phase_shift = numpy.pi * frequencies
         phase = numpy.cumsum(phase_shift)
         phase = phase - phase[0]
-        initial_data = -175.0 * numpy.cos(phase)
+        initial_data = -(2.0 / 3.0) * numpy.cos(phase)
         calculated_zi = scipy.signal.lfiltic(filter_b, filter_a, initial_data)
 
         def filter(data, start_phase_inverted):
@@ -145,7 +138,7 @@ class SecamModem:
         phase_shift = numpy.pi * frequencies_by_fnyq
         phase = (start_phase + numpy.cumsum(phase_shift)) % (2.0 * numpy.pi)
         bigF = frequencies_by_fnyq / self._bell_freq - self._bell_freq / frequencies_by_fnyq
-        bigG = 255.0 * 0.115 * (1.0 + 16.0j * bigF) / (1.0 + 1.26j * bigF)
+        bigG = 0.115 * (1.0 + 16.0j * bigF) / (1.0 + 1.26j * bigF)
         return numpy.real(bigG) * numpy.cos(phase) - numpy.imag(bigG) * numpy.sin(phase)
 
     @staticmethod
@@ -207,11 +200,8 @@ class SecamModem:
         return decode
 
     def demodulate(self, frame, line, composite):
-        composite = numpy.array(composite, copy=False)
-
-        if frame != self._last_frame or line != self._last_line + 2 or self._last_dr is None or self._last_db is None:
-            self._last_dr = numpy.zeros(len(composite))
-            self._last_db = numpy.zeros(len(composite))
+        if frame != self._last_frame or line != self._last_line + 2 or self._last_chroma is None:
+            self._last_chroma = numpy.zeros(len(composite))
 
         if not SecamModem._is_alternate_line(frame, line):
             chroma_demod = self._chroma_demod_dr
@@ -226,12 +216,10 @@ class SecamModem:
         frequencies = chroma_demod(chroma)
         if not SecamModem._is_alternate_line(frame, line):
             dr = self._demodulate_dr(frequencies)
-            self._last_dr = dr
-            db = self._last_db
+            self._last_chroma, db = dr, self._last_chroma
         else:
-            dr = self._last_dr
             db = self._demodulate_db(frequencies)
-            self._last_db = db
+            self._last_chroma, dr = db, self._last_chroma
 
         self._last_frame = frame
         self._last_line = line
@@ -243,10 +231,8 @@ class SecamModem:
         # white level: 1
         # black level: 0
         # min excursion: -233/700
-        adjusted = (value * 700.0 + 59415.0) / 1166.0
-        clamped = numpy.maximum(numpy.minimum(adjusted, 255.0), 0.0)
-        return numpy.uint8(numpy.rint(clamped))
+        return (value * 700.0 + 233.0) / 1166.0
 
     @staticmethod
     def decode_composite_level(value):
-        return (value * 1166.0 - 59415.0) / 700.0
+        return (value * 1166.0 - 233.0) / 700.0
