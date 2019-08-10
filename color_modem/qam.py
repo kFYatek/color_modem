@@ -34,7 +34,7 @@ class QamConfig(collections.namedtuple('QamConfig', ['fsc', 'bandwidth3db', 'ban
 
     @property
     def frame_cycle(self):
-        return fractions.Fraction(self.fsc / self.framerate).denominator
+        return fractions.Fraction(self.fsc / self.framerate).limit_denominator().denominator
 
     def start_phase(self, frame, line):
         frame %= self.frame_cycle

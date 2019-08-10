@@ -10,6 +10,14 @@ class PalVariant(qam.QamConfig):
     def __new__(cls, fsc, lines=625, bandwidth20db=4000000.0):
         return PalVariant.__base__.__new__(cls, fsc, 1300000.0, bandwidth20db, lines)
 
+    @property
+    def frame_cycle(self):
+        result = super(PalVariant, self).frame_cycle
+        if result % 2 != 0:
+            return 2 * result
+        else:
+            return result
+
 
 PalVariant.PAL = PalVariant(fsc=4433618.75)
 PalVariant.PAL_M = PalVariant(fsc=227.25 * 15750.0 * 1000.0 / 1001.0, lines=525, bandwidth20db=3600000.0)
