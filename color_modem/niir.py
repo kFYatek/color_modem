@@ -6,7 +6,7 @@ import scipy.signal
 from color_modem import utils, pal
 
 
-class NiirModem:
+class NiirModem(object):
     def __init__(self, config=pal.PalVariant.PAL, fs=13500000.0, noise_level=0.0):
         self._carrier_phase_step = 2.0 * numpy.pi * config.fsc / fs
         self._noise_level = noise_level
@@ -147,3 +147,40 @@ class NiirModem:
     @staticmethod
     def decode_composite_level(value):
         return (value * 1166.0 - 233.0) / 700.0
+
+
+class HueCorrectingNiirModem(NiirModem):
+    def __init__(self, *args, **kwargs):
+        super(HueCorrectingNiirModem, self).__init__(*args, **kwargs)
+        self.modulation_delay = 1
+        self._last_modulated_frame = -1
+        self._last_modulated_line = -1
+        self._last_luma = None
+        self._last_db = None
+        self._last_dr = None
+
+    def modulate(self, frame, line, r, g, b):
+        luma, db, dr = NiirModem._encode_niir_components(r, g, b)
+        if frame != self._last_modulated_frame or line != self._last_modulated_line + 2 \
+                or self._last_db is None or self._last_dr is None:
+            self._last_luma = luma
+            self._last_db = db
+            self._last_dr = dr
+        self._last_luma, luma = luma, self._last_luma
+        last_saturation = numpy.sqrt(self._last_db * self._last_db + self._last_dr * self._last_dr)
+        saturation = numpy.sqrt(db * db + dr * dr)
+        divisor = last_saturation + saturation
+        divisor[numpy.equal(divisor, 0.0)] = 1.0
+        avgdb = (self._last_db * last_saturation + db * saturation) / divisor
+        avgdr = (self._last_dr * last_saturation + dr * saturation) / divisor
+        if self._noise_level != 0.0:
+            avgdb += (numpy.random.random_sample(len(db)) - 0.5) * self._noise_level
+            avgdr += (numpy.random.random_sample(len(dr)) - 0.5) * self._noise_level
+        last_saturation_plus_ep = last_saturation + 0.1
+        hue = numpy.arctan2(avgdb, avgdr)
+        dbep, drep = last_saturation_plus_ep * numpy.sin(hue), last_saturation_plus_ep * numpy.cos(hue)
+        self._last_db = db
+        self._last_dr = dr
+        self._last_modulated_frame = frame
+        self._last_modulated_line = line
+        return self.modulate_yuv(frame, line - 2, luma, dbep, drep)

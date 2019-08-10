@@ -50,6 +50,7 @@ class SimpleCombModem(object):
     def __init__(self, backend, avg=None, delay=False):
         self.backend = backend
         self._own_delay = 1 if delay else 0
+        self.modulation_delay = getattr(backend, 'modulation_delay', 0)
         self.demodulation_delay = getattr(backend, 'demodulation_delay', 0) + self._own_delay
         self._last_frame = -1
         self._last_line = -1
