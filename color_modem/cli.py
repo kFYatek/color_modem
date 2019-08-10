@@ -6,6 +6,7 @@ from PIL import Image
 
 from color_modem.comb import Simple3DCombModem, SimpleCombModem
 from color_modem.image import ImageModem
+from color_modem.mac import MacModem, MacVariant, AveragingMacModem
 from color_modem.niir import NiirModem, HueCorrectingNiirModem
 from color_modem.ntsc import NtscCombModem, NtscVariant, NtscModem
 from color_modem.pal import Pal3DModem, PalVariant, PalDModem, PalSModem
@@ -42,6 +43,12 @@ def main():
     # modem = HueCorrectingNiirModem()
     # comb filter - turned out to be a bad idea
     # modem = SimpleCombModem(NiirModem(), avg=lambda a, b: 0.5 * (a + b))
+
+    #### D2-MAC
+    # better quality modulation - filers out unrepresentable color patterns
+    # modem = AveragingMacModem()
+    # basic
+    # modem = MacModem()
 
     img_modem = ImageModem(modem)
     img = Image.open(sys.argv[1])
