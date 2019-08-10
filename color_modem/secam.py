@@ -6,7 +6,7 @@ import scipy.signal
 from color_modem import utils
 
 
-class SecamModem:
+class SecamModem(object):
     def __init__(self, alternate_phases=False, fs=13500000.0):
         self._dr_fc = 2.0 * 4406250.0 / fs
         self._db_fc = 2.0 * 4250000.0 / fs
@@ -41,7 +41,7 @@ class SecamModem:
         self._last_chroma = None
 
     @staticmethod
-    def _encode_secam_components(r, g, b):
+    def encode_secam_components(r, g, b):
         assert len(r) == len(g) == len(b)
         luma = 0.299 * r + 0.587 * g + 0.114 * b
         dr = -1.333302 * r + 1.116474 * g + 0.216828 * b
@@ -51,7 +51,7 @@ class SecamModem:
         return luma, dr, db
 
     @staticmethod
-    def _decode_secam_components(luma, dr, db):
+    def decode_secam_components(luma, dr, db):
         assert len(luma) == len(dr) == len(db)
         r = luma - 0.5257623554153522 * dr
         g = luma + 0.2678074007993021 * dr - 0.1290417517983779 * db
@@ -164,7 +164,9 @@ class SecamModem:
         return self._start_phase_inversions[line_in_sequence] ^ (frame % 2 == 1)
 
     def modulate(self, frame, line, r, g, b):
-        luma, dr, db = SecamModem._encode_secam_components(r, g, b)
+        return self.modulate_secam_components(frame, line, *self.encode_secam_components(r, g, b))
+
+    def modulate_secam_components(self, frame, line, luma, dr, db):
         if not SecamModem._is_alternate_line(frame, line):
             chroma_frequencies_by_fnyq = self._dr_fc + self._dr_dev * self._chroma_precorrect(
                 self._chroma_precorrect_lowpass(dr))
@@ -223,7 +225,7 @@ class SecamModem:
 
         self._last_frame = frame
         self._last_line = line
-        return self._decode_secam_components(luma, dr, db)
+        return self.decode_secam_components(luma, dr, db)
 
     @staticmethod
     def encode_composite_level(value):
@@ -236,3 +238,27 @@ class SecamModem:
     @staticmethod
     def decode_composite_level(value):
         return (value * 1166.0 - 233.0) / 700.0
+
+
+class AveragingSecamModem(SecamModem):
+    def __init__(self, *args, **kwargs):
+        super(AveragingSecamModem, self).__init__(*args, **kwargs)
+        self.modulation_delay = 1
+        self._last_modulated_frame = -1
+        self._last_modulated_line = -1
+        self._last_y = None
+        self._last_u = None
+        self._last_v = None
+
+    def modulate_secam_components(self, frame, line, y, u, v):
+        if frame != self._last_modulated_frame or line != self._last_modulated_line + 2 \
+                or self._last_u is None or self._last_v is None:
+            self._last_y = y
+            self._last_u = u
+            self._last_v = v
+        self._last_y, y = y, self._last_y
+        self._last_u, u = u, 0.5 * (u + self._last_u)
+        self._last_v, v = v, 0.5 * (v + self._last_v)
+        self._last_modulated_frame = frame
+        self._last_modulated_line = line
+        return super(AveragingSecamModem, self).modulate_secam_components(frame, line - 2, y, u, v)

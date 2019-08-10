@@ -9,7 +9,7 @@ from color_modem.image import ImageModem
 from color_modem.niir import NiirModem
 from color_modem.ntsc import NtscCombModem, NtscVariant, NtscModem
 from color_modem.pal import Pal3DModem, PalVariant, PalDModem, PalSModem
-from color_modem.secam import SecamModem
+from color_modem.secam import SecamModem, AveragingSecamModem
 
 
 def main():
@@ -30,7 +30,10 @@ def main():
     # modem = PalSModem()
 
     #### SECAM
-    modem = SecamModem()
+    # better quality modulation - filers out unrepresentable color patterns
+    modem = AveragingSecamModem()
+    # basic
+    # modem = SecamModem()
 
     #### NIIR (SECAM IV)
     # standard

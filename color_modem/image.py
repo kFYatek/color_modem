@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 
-import itertools
-
 import numpy
 from PIL import Image
 
@@ -17,16 +15,27 @@ class ImageModem(object):
     def modulate(self, img, frame=0):
         if img.mode != 'RGB':
             img = img.convert('RGB')
+        modulation_delay = getattr(self._modem, 'modulation_delay', 0)
         r = bytearray(img.getdata(0))
         g = bytearray(img.getdata(1))
         b = bytearray(img.getdata(2))
+
+        def get_lines(y):
+            return numpy.array(r[img.width * y:img.width * (y + 1)]) / 255.0, \
+                   numpy.array(g[img.width * y:img.width * (y + 1)]) / 255.0, \
+                   numpy.array(b[img.width * y:img.width * (y + 1)]) / 255.0
+
         output = numpy.zeros(img.width * img.height, dtype=numpy.uint8)
-        for y in itertools.chain(range(0, img.height, 2), range(1, img.height, 2)):
-            r_line = numpy.array(r[img.width * y:img.width * (y + 1)]) / 255.0
-            g_line = numpy.array(g[img.width * y:img.width * (y + 1)]) / 255.0
-            b_line = numpy.array(b[img.width * y:img.width * (y + 1)]) / 255.0
-            output[img.width * y:img.width * (y + 1)] = _as_bytes(
-                self._modem.encode_composite_level(self._modem.modulate(frame, y, r_line, g_line, b_line)))
+        for field in range(2):
+            for y in range(field, 2 * modulation_delay, 2):
+                self._modem.modulate(frame, y, *get_lines(y))
+            for y in range(field, img.height, 2):
+                input_y = y + 2 * modulation_delay
+                while input_y >= img.height:
+                    input_y -= 2
+                output[img.width * y:img.width * (y + 1)] = _as_bytes(
+                    self._modem.encode_composite_level(
+                        self._modem.modulate(frame, y + 2 * modulation_delay, *get_lines(input_y))))
         return Image.frombytes('L', img.size, bytes(bytearray(output)))
 
     def demodulate(self, img, frame=0):
