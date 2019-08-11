@@ -113,16 +113,6 @@ class SecamModem(object):
 
         return filter, order
 
-    def _demodulate_dr(self, frequencies):
-        min_freq = self._dr_fc - (self._max_freq - self._dr_fc)
-        return self._reverse_chroma_precorrect(
-            (numpy.minimum(numpy.maximum(frequencies, min_freq), self._max_freq) - self._dr_fc) / self._dr_dev)
-
-    def _demodulate_db(self, frequencies):
-        max_freq = self._db_fc + (self._db_fc - self._min_freq)
-        return self._reverse_chroma_precorrect(
-            (numpy.minimum(numpy.maximum(frequencies, self._min_freq), max_freq) - self._db_fc) / self._db_dev)
-
     def _modulate_chroma(self, start_phase, frequencies):
         bigF = frequencies / self._bell_freq - self._bell_freq / frequencies
         bigG = 0.115 * (1.0 + 16.0j * bigF) / (1.0 + 1.26j * bigF)
@@ -203,12 +193,16 @@ class SecamModem(object):
         chroma = SecamModem._highpass(chroma, 0.25 * self._bell_freq)
 
         frequencies = self._chroma_demod(chroma)[-len(composite):]
+        frequencies = numpy.minimum(numpy.maximum(frequencies, self._min_freq), self._max_freq)
         if not SecamModem._is_alternate_line(frame, line):
-            dr = self._demodulate_dr(frequencies)
-            self._last_chroma, db = dr, self._last_chroma
+            chroma = (frequencies - self._dr_fc) / self._dr_dev
         else:
-            db = self._demodulate_db(frequencies)
-            self._last_chroma, dr = db, self._last_chroma
+            chroma = (frequencies - self._db_fc) / self._db_dev
+        chroma = self._reverse_chroma_precorrect(chroma)
+        if not SecamModem._is_alternate_line(frame, line):
+            self._last_chroma, dr, db = chroma, chroma, self._last_chroma
+        else:
+            self._last_chroma, dr, db = chroma, self._last_chroma, chroma
 
         self._last_frame = frame
         self._last_line = line
