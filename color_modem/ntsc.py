@@ -61,8 +61,8 @@ class NtscModem(AbstractQamColorModem):
 
 
 class NtscCombModem(comb.AbstractCombModem):
-    def __init__(self, *args, **kwargs):
-        super(NtscCombModem, self).__init__(NtscModem(*args, **kwargs))
+    def __init__(self, variant=NtscVariant.NTSC, fs=13500000.0, *args, **kwargs):
+        super(NtscCombModem, self).__init__(NtscModem(variant, fs), *args, **kwargs)
         sine = numpy.sin(self.backend.config.line_shift * 0.5)
         if abs(sine) > 0.05:
             self._factor = 0.5 / sine

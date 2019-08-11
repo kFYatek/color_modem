@@ -18,8 +18,10 @@ def _make_filter(b, a, wp, btype, shift, phase_shift):
 
     if shift == 0:
         filter = lambda x: scipy.signal.lfilter(b, a, x)
+    elif shift > 0:
+        filter = lambda x: scipy.signal.lfilter(b, a, numpy.concatenate((x, x[-1] * numpy.ones(shift))))[shift:]
     else:
-        filter = lambda x: scipy.signal.lfilter(b, a, numpy.concatenate((x, numpy.zeros(shift))))[shift:]
+        filter = lambda x: scipy.signal.lfilter(b, a, numpy.concatenate((x[0] * numpy.ones(-shift), x)))[:shift]
 
     if phase_shift:
         phase_shift = (numpy.angle(
@@ -36,14 +38,20 @@ def iirfilter(N, Wn, rp=None, rs=None, btype='band', ftype='butter', shift=True,
 
 def iirdesign(wp, ws, gpass, gstop, ftype='butter', shift=True, phase_shift=False):
     b, a = scipy.signal.iirdesign(wp, ws, gpass, gstop, ftype=ftype)
-    return _make_filter(b, a, wp, 'band', shift, phase_shift)
+    btype = 'band'
+    if len(numpy.atleast_1d(wp)) > 1 and len(numpy.atleast_1d(ws)) > 1 and ws[0] > wp[0]:
+        btype = 'bandstop'
+    return _make_filter(b, a, wp, btype, shift, phase_shift)
 
 
 def iirdesign_wc(wc, wp, ws, gpass, gstop, ftype='butter', shift=True, phase_shift=False):
-    return iirdesign([wc - wp, wc + wp], [wc - ws, wc + ws], gpass, gstop, ftype, shift, phase_shift)
+    smallest = numpy.nextafter(0.0, 1.0)
+    largest = numpy.nextafter(1.0, 0.0)
+    return iirdesign([max(wc - wp, smallest), min(wc + wp, largest)], [max(wc - ws, smallest), min(wc + ws, largest)],
+                     gpass, gstop, ftype, shift, phase_shift)
 
 
-def irrsplitter(wc, wp, ws, gpass, gstop, ftype='butter', shift=True, pass_phase_shift=False, stop_phase_shift=False):
+def iirsplitter(wc, wp, ws, gpass, gstop, ftype='butter', shift=True, pass_phase_shift=False, stop_phase_shift=False):
     def invert_db(db):
         return -(20.0 * numpy.log10(1.0 - 10.0 ** (-db / 20.0)))
 

@@ -68,7 +68,7 @@ class QamColorModem(object):
         self.carrier_phase_step = 0.5 * numpy.pi * wc
         self._chroma_precorrect_lowpass = utils.iirdesign(wp, ws, gpass, gstop)
         self._extract_chroma2x, self.extract_chroma_phase_shift, self._remove_chroma2x = \
-            utils.irrsplitter(0.5 * wc, 0.5 * wp, 0.5 * ws, gpass, gstop, pass_phase_shift=True)
+            utils.iirsplitter(0.5 * wc, 0.5 * wp, 0.5 * ws, gpass, gstop, pass_phase_shift=True)
         self._demod_lowpass = utils.iirfilter(6, wc - 0.5 * ws, rs=48.0, btype='lowpass', ftype='cheby2')
 
     def _modulate_chroma(self, start_phase, u, v):
@@ -110,6 +110,7 @@ class QamColorModem(object):
 
 class AbstractQamColorModem(object):
     def __init__(self, fs, config):
+        self.fs = fs
         self.config = config
         self.qam = QamColorModem(2.0 * config.fsc / fs, 2.0 * config.bandwidth3db / fs, 2.0 * config.bandwidth20db / fs,
                                  3.0, 20.0)

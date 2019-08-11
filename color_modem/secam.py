@@ -118,7 +118,7 @@ class SecamModem(object):
                 zi = calculated_zi
             if shift:
                 return scipy.signal.lfilter(filter_b, filter_a,
-                                            numpy.concatenate((data, numpy.zeros(shift))), zi=zi)[0][shift:]
+                                            numpy.concatenate((data, data[-1] * numpy.ones(shift))), zi=zi)[0][shift:]
             else:
                 return scipy.signal.lfilter(filter_b, filter_a, data, zi=zi)[0]
 

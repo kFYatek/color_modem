@@ -2,13 +2,33 @@
 
 import numpy
 
+from color_modem import utils
+
+
+def _notch(qam_modem, scale):
+    bandwidth3db = qam_modem.config.bandwidth3db * scale
+    bandwidth20db = qam_modem.config.bandwidth20db * scale
+    return utils.iirsplitter(2.0 * qam_modem.config.fsc / qam_modem.fs, 2.0 * bandwidth3db / qam_modem.fs,
+                             2.0 * bandwidth20db / qam_modem.fs, 3.0, 20.0, ftype='cheby2')[1]
+
 
 class AbstractCombModem(object):
-    def __init__(self, backend):
+    def __init__(self, backend, notch=0.0):
         self.backend = backend
         self._last_frame = -1
         self._last_line = -1
         self._last_composite = None
+        self.notch = None
+        if notch:
+            self.notch = _notch(backend, notch)
+
+    @property
+    def config(self):
+        return self.backend.config
+
+    @property
+    def fs(self):
+        return self.backend.fs
 
     def modulate_yuv(self, frame, line, y, u, v):
         return self.backend.modulate_yuv(frame, line, y, u, v)
@@ -23,6 +43,8 @@ class AbstractCombModem(object):
             y, u, v = self.demodulate_yuv_combed(frame, line, self._last_composite, composite, *args, **kwargs)
             if strip_chroma:
                 y = y - self.backend.modulate_yuv(frame, line, numpy.zeros(len(composite)), u, v)
+                if self.notch:
+                    y = self.notch(y)
         self._last_frame = frame
         self._last_line = line
         self._last_composite = numpy.array(composite)
@@ -47,7 +69,7 @@ class SimpleCombModem(object):
         sign = (1.0 - numpy.signbit(val1)) - numpy.signbit(val2)
         return sign * numpy.minimum(numpy.abs(val1), numpy.abs(val2))
 
-    def __init__(self, backend, avg=None, delay=False):
+    def __init__(self, backend, notch=0.0, avg=None, delay=False):
         self.backend = backend
         self._own_delay = 1 if delay else 0
         self.modulation_delay = getattr(backend, 'modulation_delay', 0)
@@ -60,6 +82,10 @@ class SimpleCombModem(object):
             self._avg = avg
         else:
             self._avg = self._minavg
+
+        self._notch = None
+        if notch:
+            self._notch = _notch(backend, notch)
 
     def modulate_yuv(self, frame, line, y, u, v):
         return self.backend.modulate_yuv(frame, line, y, u, v)
@@ -78,6 +104,8 @@ class SimpleCombModem(object):
             v = self._avg(self._last_demodulated[2], curr[2])
             if strip_chroma:
                 y = y - self.backend.modulate_yuv(frame, line - 2 * self._own_delay, numpy.zeros(len(composite)), u, v)
+                if self._notch:
+                    y = self._notch(y)
         self._last_frame = frame
         self._last_line = line
         self._last_demodulated = curr
@@ -97,5 +125,5 @@ class SimpleCombModem(object):
 
 
 class Simple3DCombModem(SimpleCombModem):
-    def __init__(self, backend, avg=None):
-        super(Simple3DCombModem, self).__init__(backend, avg, True)
+    def __init__(self, backend, notch=0.0, avg=None):
+        super(Simple3DCombModem, self).__init__(backend, notch, avg, True)

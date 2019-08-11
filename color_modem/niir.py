@@ -11,6 +11,7 @@ class NiirModem(object):
         self._carrier_phase_step = 2.0 * numpy.pi * config.fsc / fs
         self._noise_level = noise_level
         self.config = config
+        self.fs = fs
 
         self._chroma_precorrect_lowpass = utils.iirdesign(2.0 * config.bandwidth3db / fs,
                                                           2.0 * config.bandwidth20db / fs, 3.0, 20.0)

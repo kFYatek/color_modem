@@ -71,8 +71,8 @@ class PalSModem(qam.AbstractQamColorModem):
 
 
 class PalDModem(comb.AbstractCombModem):
-    def __init__(self, *args, **kwargs):
-        super(PalDModem, self).__init__(PalSModem(*args, **kwargs))
+    def __init__(self, variant=PalVariant.PAL, fs=13500000.0, *args, **kwargs):
+        super(PalDModem, self).__init__(PalSModem(variant, fs), *args, **kwargs)
         self._sin_factor = numpy.sin(0.5 * self.backend.config.line_shift)
         self._cos_factor = numpy.cos(0.5 * self.backend.config.line_shift)
         self._filter = utils.iirfilter(6, (
@@ -236,6 +236,8 @@ class Pal3DModem(PalDModem):
 
         if strip_chroma:
             y = y - self.backend.modulate_yuv(frame, line - 2, numpy.zeros(len(composite)), u, v)
+            if self.notch:
+                y = self.notch(y)
 
         self._last_frame = frame
         self._last_line = line
