@@ -25,7 +25,7 @@ class SecamModem(object):
         self._chroma_precorrect_lowpass = utils.iirdesign(wp=2.0 * 1300000.0 / fs, ws=2.0 * 3500000.0 / fs,
                                                           gpass=3.0, gstop=30.0)
         self._chroma_precorrect, self._reverse_chroma_precorrect = SecamModem._chroma_precorrect_design(
-            3.0 * 85000.0 / fs)
+            2.0 * 85000.0 / fs, 3.0)
 
         center = 0.5 * (self._min_freq + self._max_freq)
         dev = 0.5 * (self._max_freq - self._min_freq)
@@ -64,15 +64,19 @@ class SecamModem(object):
         return scipy.signal.lfilter([alpha, -alpha], [1.0, -alpha], data)
 
     @staticmethod
-    def _chroma_precorrect_design(fc_by_fs):
-        alpha = 1.0 / (2.0 * numpy.pi * fc_by_fs + 1.0)
-        forward_b = numpy.array([2.0 * alpha + 1.0, -3.0 * alpha])
-        forward_a = numpy.array([1.0, -alpha])
-        backward_b = numpy.array([1.0, forward_a[1]]) / forward_b[0]
-        backward_a = numpy.array([1.0, forward_b[1] / forward_b[0]])
-        forward = lambda x: scipy.signal.lfilter(forward_b, forward_a, x)
-        backward = lambda x: scipy.signal.lfilter(backward_b, backward_a, x)
-        return forward, backward
+    def _chroma_precorrect_design(wc, k):
+        if k == 1.0:
+            return (lambda x: x), (lambda x: x)
+        else:
+            forward_b, forward_a = scipy.signal.iirfilter(1, k * wc, btype='highpass', ftype='butter')
+            assert forward_a[0] == 1.0
+            forward_b[0] = (k - 1.0) * forward_b[0] + 1.0
+            forward_b[1] = (k - 1.0) * forward_b[1] + forward_a[1]
+            backward_b = numpy.array([1.0, forward_a[1]]) / forward_b[0]
+            backward_a = numpy.array([1.0, forward_b[1] / forward_b[0]])
+            forward = lambda x: scipy.signal.lfilter(forward_b, forward_a, x)
+            backward = lambda x: scipy.signal.lfilter(backward_b, backward_a, x)
+            return forward, backward
 
     @staticmethod
     def _lanczos_kernel(a, offset=0.0, scale=1.0):
