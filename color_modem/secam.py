@@ -20,8 +20,7 @@ class SecamModem(object):
             self._start_phase_inversions = [False, False, True, False, False, True]
         else:
             self._start_phase_inversions = [False, False, False, True, True, True]
-        self._chroma_demod_comb, self._chroma_demod_comb_order = self._feedback_comb(0.8275, fs / 4286000.0, 3)
-
+        self._chroma_demod_bell = self._chroma_demod_bell_design(2.0 * 4286000.0 / fs, self._max_freq, 16.0, 1.26)
         self._chroma_precorrect_lowpass = utils.iirdesign(wp=2.0 * 1300000.0 / fs, ws=2.0 * 3500000.0 / fs,
                                                           gpass=3.0, gstop=30.0)
         self._chroma_precorrect, self._reverse_chroma_precorrect = SecamModem._chroma_precorrect_design(
@@ -59,11 +58,6 @@ class SecamModem(object):
         return r, g, b
 
     @staticmethod
-    def _highpass(data, fc_by_fs):
-        alpha = 1.0 / (2.0 * numpy.pi * fc_by_fs + 1.0)
-        return scipy.signal.lfilter([alpha, -alpha], [1.0, -alpha], data)
-
-    @staticmethod
     def _chroma_precorrect_design(wc, k):
         if k == 1.0:
             return (lambda x: x), (lambda x: x)
@@ -79,43 +73,23 @@ class SecamModem(object):
             return forward, backward
 
     @staticmethod
-    def _lanczos_kernel(a, offset=0.0, scale=1.0):
-        assert (a == int(a) and a > 0)
-        a = int(a)
-        scaled_a = int(a / scale)
-        x = (numpy.arange(2 * scaled_a + 1) - offset - scaled_a) * scale
-        pix = numpy.pi * x
+    def _chroma_demod_bell_design(f0, f_max, kn, kd):
+        def gain(f):
+            return numpy.sqrt(
+                (kd * kd * f0 * f0 * f0 * f0 + (1 - 2 * kd * kd) * f * f * f0 * f0 + kd * kd * f * f * f * f) / (
+                        kn * kn * f0 * f0 * f0 * f0 + (1 - 2 * kn * kn) * f * f * f0 * f0 + kn * kn * f * f * f * f))
 
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            result = scale * a * numpy.sin(pix) * numpy.sin(pix / a) / (pix * pix)
+        def gain_db(f):
+            return 10.0 * numpy.log10(gain(f))
 
-        if offset == 0.0:
-            result[scaled_a] = scale
-        return result
-
-    def _feedback_comb(self, alpha, k, lanczos_a):
-        k_frac = -k % 1.0
-        k_int = int(numpy.floor(k))
-        kernel = alpha * SecamModem._lanczos_kernel(lanczos_a, k_frac)[1:]
-
-        shift = max(len(kernel) - k_int - lanczos_a, 0)
-        filter_b = numpy.array(shift * [0.0] + [1.0])
-        filter_a = numpy.zeros(shift + lanczos_a + k_int + 1)
-        filter_a[0] = 1.0
-        for i in range(len(kernel)):
-            filter_a[shift + lanczos_a + k_int - i] = -kernel[i]
-        order = max(len(filter_b), len(filter_a)) - 1
-
-        def filter(data):
-            if shift:
-                return scipy.signal.lfilter(filter_b, filter_a,
-                                            numpy.concatenate((data, data[-1] * numpy.ones(shift))))[shift:]
-            else:
-                return scipy.signal.lfilter(filter_b, filter_a, data)
-
-        return filter, order
+        if kn == kd:
+            return lambda x: x
+        else:
+            wp2 = f0 + 1 / 256.0
+            wp1 = f0 * f0 / wp2
+            ws2 = f_max
+            ws1 = f0 * f0 / ws2
+            return utils.iirdesign([wp1, wp2], [ws1, ws2], -gain_db(wp2), -gain_db(ws2), shift=False)
 
     def _modulate_chroma(self, start_phase, frequencies):
         bigF = frequencies / self._bell_freq - self._bell_freq / frequencies
@@ -190,11 +164,10 @@ class SecamModem(object):
             self._last_chroma = numpy.zeros(len(composite))
 
         luma = self._chroma_demod_luma_filter(composite)
-        chroma_rest = numpy.flip(composite[1:2 * (1 + self._chroma_demod_comb_order + self._chroma_demod_filter_order)])
+        chroma_rest = numpy.flip(composite[1:len(composite) // 40])
         chroma_comp = numpy.concatenate((chroma_rest, composite))
         chroma = self._chroma_demod_chroma_filter(chroma_comp)
-        chroma = self._chroma_demod_comb(chroma)
-        chroma = SecamModem._highpass(chroma, 0.25 * self._bell_freq)
+        chroma = self._chroma_demod_bell(chroma)
 
         frequencies = self._chroma_demod(chroma)[-len(composite):]
         frequencies = numpy.minimum(numpy.maximum(frequencies, self._min_freq), self._max_freq)
