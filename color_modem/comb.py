@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import numpy
+import scipy.signal
 
 from color_modem import utils
 
@@ -10,11 +11,9 @@ def minavg(val1, val2):
     return sign * numpy.minimum(numpy.abs(val1), numpy.abs(val2))
 
 
-def _notch(qam_modem, scale):
-    bandwidth3db = qam_modem.config.bandwidth3db * scale
-    bandwidth20db = qam_modem.config.bandwidth20db * scale
-    return utils.iirsplitter(2.0 * qam_modem.config.fsc / qam_modem.fs, 2.0 * bandwidth3db / qam_modem.fs,
-                             2.0 * bandwidth20db / qam_modem.fs, 3.0, 20.0, ftype='cheby2')[1]
+def _notch(qam_modem, q):
+    b, a = scipy.signal.iirnotch(2.0 * qam_modem.config.fsc / qam_modem.fs, q)
+    return lambda x: scipy.signal.lfilter(b, a, x)
 
 
 class AbstractCombModem(object):
