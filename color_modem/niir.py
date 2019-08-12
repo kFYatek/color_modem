@@ -16,9 +16,14 @@ class NiirModem(object):
         self._chroma_precorrect_lowpass = utils.iirdesign(2.0 * config.bandwidth3db / fs,
                                                           2.0 * config.bandwidth20db / fs, 3.0, 20.0)
         self._demodulate_resample_factor = 3
-        self._demodulate_upsampled_baseband_filter, self._demodulate_upsampled_filter = NiirModem._demodulate_am_design(
-            2.0 * config.fsc / fs, 2.0 * config.bandwidth3db / fs, 2.0 * config.bandwidth20db / fs, 3.0, 20.0,
-            self._demodulate_resample_factor)
+
+        self._demodulate_upsampled_baseband_filter, \
+        self._demodulate_upsampled_filter, \
+        self._demodulate_upsampled_filter_phase_shift = NiirModem._demodulate_am_design(2.0 * config.fsc / fs,
+                                                                                        2.0 * config.bandwidth3db / fs,
+                                                                                        2.0 * config.bandwidth20db / fs,
+                                                                                        3.0, 20.0,
+                                                                                        self._demodulate_resample_factor)
 
         self._last_frame = -1
         self._last_line = -1
@@ -82,8 +87,8 @@ class NiirModem(object):
 
     @staticmethod
     def _demodulate_am_design(wc, wp, ws, gpass, gstop, resample_factor):
-        return utils.iirdesign(wp / resample_factor, ws / resample_factor, gpass, gstop), utils.iirdesign_wc(
-            wc / resample_factor, wp / resample_factor, ws / resample_factor, gpass, gstop)
+        return (utils.iirdesign(wp / resample_factor, ws / resample_factor, gpass, gstop),) + utils.iirdesign_wc(
+            wc / resample_factor, wp / resample_factor, ws / resample_factor, gpass, gstop, phase_shift=True)
 
     def demodulate(self, frame, line, *args, **kwargs):
         return self.decode_yuv(*self.demodulate_yuv(frame, line, *args, **kwargs))
@@ -130,7 +135,21 @@ class NiirModem(object):
         dr = saturation * cosphi
         luma = composite
         if strip_chroma:
-            luma = luma - self._modulate_precorrected_chroma(frame, line, db, dr)
+            sincarrier = scipy.signal.resample_poly(carrier_up, up=1, down=self._demodulate_resample_factor)
+            coscarrier = scipy.signal.resample_poly(altcarrier_up, up=1, down=self._demodulate_resample_factor)
+            if not self.config.is_alternate_line(frame, line):
+                phase_shift = self.config.line_shift
+                u_signal = db
+                v_signal = dr
+            else:
+                phase_shift = 0.0
+                u_signal = -numpy.sqrt(db * db + dr * dr)
+                v_signal = 0.0
+            phase_shift += numpy.pi - self._demodulate_upsampled_filter_phase_shift
+            u_signal, v_signal = (u_signal * numpy.cos(phase_shift) - v_signal * numpy.sin(phase_shift)), \
+                                 (u_signal * numpy.sin(phase_shift) + v_signal * numpy.cos(phase_shift))
+            reconstructed_chroma = u_signal * sincarrier + v_signal * coscarrier
+            luma = luma - reconstructed_chroma
 
         self._last_phasemod_up = phasemod_up
         self._last_frame = frame
