@@ -10,7 +10,7 @@ from color_modem.mac import MacModem, MacVariant, AveragingMacModem
 from color_modem.niir import NiirModem, HueCorrectingNiirModem
 from color_modem.ntsc import NtscCombModem, NtscVariant, NtscModem
 from color_modem.pal import Pal3DModem, PalVariant, PalDModem, PalSModem
-from color_modem.secam import SecamModem, AveragingSecamModem
+from color_modem.secam import SecamModem, AveragingSecamModem, SecamVariant
 
 
 def main():

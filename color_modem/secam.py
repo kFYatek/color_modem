@@ -1,33 +1,124 @@
 # -*- coding: utf-8 -*-
 
+import collections
+
 import numpy
 import scipy.signal
 
 from color_modem import utils
 
+SecamVariant = collections.namedtuple('SecamVariant',
+                                      ['fsc_dr', 'fsc_db', 'fdev_dr', 'fdev_db', 'flimit_min', 'flimit_max', 'm0',
+                                       'bell_f0', 'bell_kn', 'bell_kd', 'lf_precorrect_f1', 'lf_precorrect_k'])
+
+# Possible parameters of SECAM I, based on Sven Boetcher & Echkard Matzel's chapter in "Mediengegenwart"
+SecamVariant.SECAM_I = SecamVariant(fsc_dr=4437500.0,
+                                    fsc_db=4437500.0,
+                                    fdev_dr=250000.0,
+                                    fdev_db=250000.0,
+                                    flimit_min=4187500.0,
+                                    flimit_max=4687500.0,
+                                    m0=0.2,
+                                    bell_f0=4437500.0,
+                                    bell_kn=1.0,
+                                    bell_kd=1.0,
+                                    lf_precorrect_f1=0.0,
+                                    lf_precorrect_k=1.0)
+
+# Possible parameters of SECAM II, based on Sven Boetcher & Echkard Matzel's chapter in "Mediengegenwart"
+SecamVariant.SECAM_II = SecamVariant(fsc_dr=4437500.0,
+                                     fsc_db=4437500.0,
+                                     fdev_dr=250000.0,
+                                     fdev_db=250000.0,
+                                     flimit_min=4187500.0,
+                                     flimit_max=4687500.0,
+                                     m0=0.1,
+                                     bell_f0=4437500.0,
+                                     bell_kn=16.0,
+                                     bell_kd=1.26,
+                                     lf_precorrect_f1=0.0,
+                                     lf_precorrect_k=1.0)
+
+# SECAM III as originally proposed
+SecamVariant.SECAM_III = SecamVariant(fsc_dr=4437500.0,
+                                      fsc_db=4437500.0,
+                                      fdev_dr=230000.0,
+                                      fdev_db=230000.0,
+                                      flimit_min=3987500.0,
+                                      flimit_max=4787500.0,
+                                      m0=0.1,
+                                      bell_f0=4437500.0,
+                                      bell_kn=16.0,
+                                      bell_kd=1.26,
+                                      lf_precorrect_f1=70000.0,
+                                      lf_precorrect_k=5.6)
+
+# SECAM IIIb / III opt. - the actual broadcast variant
+SecamVariant.SECAM = SecamVariant(fsc_dr=4406250.0,
+                                  fsc_db=4250000.0,
+                                  fdev_dr=280000.0,
+                                  fdev_db=230000.0,
+                                  flimit_min=3900000.0,
+                                  flimit_max=4756250.0,
+                                  m0=0.115,
+                                  bell_f0=4286000.0,
+                                  bell_kn=16.0,
+                                  bell_kd=1.26,
+                                  lf_precorrect_f1=85000.0,
+                                  lf_precorrect_k=3.0)
+
+# SECAM-A was allegedly tested by ITA in 1962 - that must have been based on SECAM I.
+SecamVariant.SECAM_A = SecamVariant(fsc_dr=2660000.0,
+                                    fsc_db=2660000.0,
+                                    fdev_dr=250000.0,
+                                    fdev_db=250000.0,
+                                    flimit_min=2410000.0,
+                                    flimit_max=2910000.0,
+                                    m0=0.2,
+                                    bell_f0=2660000.0,
+                                    bell_kn=1.0,
+                                    bell_kd=1.0,
+                                    lf_precorrect_f1=0.0,
+                                    lf_precorrect_k=1.0)
+
+# SECAM-M allegedly used to be broadcast in Cambodia and Vietnam. Assuming it was based on SECAM III.
+SecamVariant.SECAM_M = SecamVariant(fsc_dr=227.5 * 15750.0 * 1000.0 / 1001.0,
+                                    fsc_db=227.5 * 15750.0 * 1000.0 / 1001.0,
+                                    fdev_dr=230000.0,
+                                    fdev_db=230000.0,
+                                    flimit_min=227.5 * 15750.0 * 1000.0 / 1001.0 - 500000.0,
+                                    flimit_max=227.5 * 15750.0 * 1000.0 / 1001.0 + 500000.0,
+                                    m0=0.1,
+                                    bell_f0=227.5 * 15750.0 * 1000.0 / 1001.0,
+                                    bell_kn=16.0,
+                                    bell_kd=1.26,
+                                    lf_precorrect_f1=70000.0,
+                                    lf_precorrect_k=5.6)
+
 
 class SecamModem(object):
-    def __init__(self, alternate_phases=False, fs=13500000.0):
-        self._dr_fc = 2.0 * 4406250.0 / fs
-        self._db_fc = 2.0 * 4250000.0 / fs
-        self._dr_dev = 2.0 * 280000.0 / fs
-        self._db_dev = 2.0 * 230000.0 / fs
-        self._min_freq = 2.0 * 3900000.0 / fs
-        self._max_freq = 2.0 * 4756250.0 / fs
-        self._bell_freq = 2.0 * 4286000.0 / fs
-
+    def __init__(self, variant=SecamVariant.SECAM, alternate_phases=False, fs=13500000.0):
+        self._variant = variant
+        self._fsc_dr = 2.0 * variant.fsc_dr / fs
+        self._fsc_db = 2.0 * variant.fsc_db / fs
+        self._fdev_dr = 2.0 * variant.fdev_dr / fs
+        self._fdev_db = 2.0 * variant.fdev_db / fs
+        self._flimit_min = 2.0 * variant.flimit_min / fs
+        self._flimit_max = 2.0 * variant.flimit_max / fs
+        self._bell_f0 = 2.0 * variant.bell_f0 / fs
         if not alternate_phases:
             self._start_phase_inversions = [False, False, True, False, False, True]
         else:
             self._start_phase_inversions = [False, False, False, True, True, True]
-        self._chroma_demod_bell = self._chroma_demod_bell_design(2.0 * 4286000.0 / fs, self._max_freq, 16.0, 1.26)
+        self._chroma_demod_bell = self._chroma_demod_bell_design(self._bell_f0, self._flimit_max,
+                                                                 variant.bell_kn, variant.bell_kd)
         self._chroma_precorrect_lowpass = utils.iirdesign(wp=2.0 * 1300000.0 / fs, ws=2.0 * 3500000.0 / fs,
                                                           gpass=3.0, gstop=30.0)
         self._chroma_precorrect, self._reverse_chroma_precorrect = SecamModem._chroma_precorrect_design(
-            2.0 * 85000.0 / fs, 3.0)
+            2.0 * variant.lf_precorrect_f1 / fs, variant.lf_precorrect_k)
 
-        center = 0.5 * (self._min_freq + self._max_freq)
-        dev = 0.5 * (self._max_freq - self._min_freq)
+        center = 0.5 * (self._flimit_min + self._flimit_max)
+        dev = 0.5 * (self._flimit_max - self._flimit_min)
 
         self._chroma_demod_filter_order = 3
         self._chroma_demod_chroma_filter = utils.iirfilter(3, [center - dev, center + dev],
@@ -92,8 +183,9 @@ class SecamModem(object):
             return utils.iirdesign([wp1, wp2], [ws1, ws2], -gain_db(wp2), -gain_db(ws2), shift=False)
 
     def _modulate_chroma(self, start_phase, frequencies):
-        bigF = frequencies / self._bell_freq - self._bell_freq / frequencies
-        bigG = 0.115 * (1.0 + 16.0j * bigF) / (1.0 + 1.26j * bigF)
+        bigF = frequencies / self._bell_f0 - self._bell_f0 / frequencies
+        bigG = self._variant.m0 * (1.0 + 1.0j * self._variant.bell_kn * bigF) / (
+                1.0 + 1.0j * self._variant.bell_kd * bigF)
         phase_shift = numpy.pi * frequencies
         phase = (start_phase - phase_shift[0] - numpy.angle(bigG[0]) + numpy.cumsum(phase_shift)) % (2.0 * numpy.pi)
         return numpy.real(bigG) * numpy.cos(phase) - numpy.imag(bigG) * numpy.sin(phase)
@@ -125,12 +217,12 @@ class SecamModem(object):
 
     def modulate_secam_components(self, frame, line, luma, dr, db):
         if not SecamModem._is_alternate_line(frame, line):
-            chroma_frequencies = self._dr_fc + self._dr_dev * self._chroma_precorrect(
+            chroma_frequencies = self._fsc_dr + self._fdev_dr * self._chroma_precorrect(
                 self._chroma_precorrect_lowpass(dr))
         else:
-            chroma_frequencies = self._db_fc + self._db_dev * self._chroma_precorrect(
+            chroma_frequencies = self._fsc_db + self._fdev_db * self._chroma_precorrect(
                 self._chroma_precorrect_lowpass(db))
-        chroma_frequencies = numpy.minimum(numpy.maximum(chroma_frequencies, self._min_freq), self._max_freq)
+        chroma_frequencies = numpy.minimum(numpy.maximum(chroma_frequencies, self._flimit_min), self._flimit_max)
         start_phase = numpy.pi if self._start_phase_inverted(frame, line) else 0.0
         chroma = self._modulate_chroma(start_phase, chroma_frequencies)
 
@@ -170,11 +262,11 @@ class SecamModem(object):
         chroma = self._chroma_demod_bell(chroma)
 
         frequencies = self._chroma_demod(chroma)[-len(composite):]
-        frequencies = numpy.minimum(numpy.maximum(frequencies, self._min_freq), self._max_freq)
+        frequencies = numpy.minimum(numpy.maximum(frequencies, self._flimit_min), self._flimit_max)
         if not SecamModem._is_alternate_line(frame, line):
-            chroma = (frequencies - self._dr_fc) / self._dr_dev
+            chroma = (frequencies - self._fsc_dr) / self._fdev_dr
         else:
-            chroma = (frequencies - self._db_fc) / self._db_dev
+            chroma = (frequencies - self._fsc_db) / self._fdev_db
         chroma = self._reverse_chroma_precorrect(chroma)
         if not SecamModem._is_alternate_line(frame, line):
             self._last_chroma, dr, db = chroma, chroma, self._last_chroma
