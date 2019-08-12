@@ -5,6 +5,11 @@ import numpy
 from color_modem import utils
 
 
+def minavg(val1, val2):
+    sign = (1.0 - numpy.signbit(val1)) - numpy.signbit(val2)
+    return sign * numpy.minimum(numpy.abs(val1), numpy.abs(val2))
+
+
 def _notch(qam_modem, scale):
     bandwidth3db = qam_modem.config.bandwidth3db * scale
     bandwidth20db = qam_modem.config.bandwidth20db * scale
@@ -64,11 +69,6 @@ class AbstractCombModem(object):
 
 
 class SimpleCombModem(object):
-    @staticmethod
-    def _minavg(val1, val2):
-        sign = (1.0 - numpy.signbit(val1)) - numpy.signbit(val2)
-        return sign * numpy.minimum(numpy.abs(val1), numpy.abs(val2))
-
     def __init__(self, backend, notch=0.0, avg=None, delay=False):
         self.backend = backend
         self._own_delay = 1 if delay else 0
@@ -81,7 +81,7 @@ class SimpleCombModem(object):
         if avg is not None:
             self._avg = avg
         else:
-            self._avg = self._minavg
+            self._avg = lambda a, b: 0.5 * (a + b)
 
         self._notch = None
         if notch:

@@ -42,7 +42,7 @@ def main():
     # standard
     # modem = NiirModem()
     # comb filter - turned out to be a bad idea
-    # modem = SimpleCombModem(HueCorrectingNiirModem(), avg=lambda a, b: 0.5 * (a + b))
+    # modem = SimpleCombModem(HueCorrectingNiirModem())
 
     #### D2-MAC
     # better quality modulation - filers out unrepresentable color patterns
