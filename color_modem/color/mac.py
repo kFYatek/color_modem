@@ -13,11 +13,12 @@ MacVariant.D2MAC_7MHZ = MacVariant(720)
 
 
 class MacModem(object):
-    def __init__(self, variant_or_width=MacVariant.D2MAC_12MHZ):
+    def __init__(self, line_config, variant_or_width=MacVariant.D2MAC_12MHZ):
         try:
             self._width = int(variant_or_width.width)
         except AttributeError:
             self._width = int(variant_or_width)
+        self._is_alternate_line = line_config.is_alternate_line
         self._last_frame = -1
         self._last_line = -1
         self._last_chroma = None
@@ -38,12 +39,8 @@ class MacModem(object):
         b = luma + 1.364256480218281 * db
         return r, g, b
 
-    @staticmethod
-    def _is_alternate_line(frame, line):
-        return ((line % 2) ^ ((line // 2) % 2)) != frame % 2
-
     def modulate_mac_components(self, frame, line, luma, dr, db):
-        if not MacModem._is_alternate_line(frame, line):
+        if not self._is_alternate_line(frame, line):
             chroma = dr
         else:
             chroma = db
@@ -114,7 +111,7 @@ class MacModem(object):
 
         chroma = scipy.signal.resample_poly(chroma, up=2, down=1) - 0.5
 
-        if not MacModem._is_alternate_line(frame, line):
+        if not self._is_alternate_line(frame, line):
             dr = chroma
             self._last_chroma, db = dr, self._last_chroma
         else:
@@ -127,14 +124,6 @@ class MacModem(object):
 
     def modulate(self, frame, line, r, g, b):
         return self.modulate_mac_components(frame, line, *MacModem.encode_mac_components(r, g, b))
-
-    @staticmethod
-    def encode_composite_level(value):
-        return value
-
-    @staticmethod
-    def decode_composite_level(value):
-        return value
 
 
 class AveragingMacModem(MacModem):

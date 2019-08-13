@@ -3,27 +3,26 @@
 import numpy
 import scipy.signal
 
-from color_modem import utils, pal
+from color_modem import utils
+from color_modem.color import pal
 
 
-class NiirModem(object):
-    def __init__(self, config=pal.PalVariant.PAL, fs=13500000.0, noise_level=0.0):
-        self._carrier_phase_step = 2.0 * numpy.pi * config.fsc / fs
+class NiirModem(utils.ConstantFrequencyCarrier):
+    def __init__(self, line_config, config=pal.PalVariant.PAL, noise_level=0.0):
+        self._carrier_phase_step = 2.0 * numpy.pi * config.fsc / line_config.fs
         self._noise_level = noise_level
+        self.line_config = line_config
         self.config = config
-        self.fs = fs
 
-        self._chroma_precorrect_lowpass = utils.iirdesign(2.0 * config.bandwidth3db / fs,
-                                                          2.0 * config.bandwidth20db / fs, 3.0, 20.0)
+        self._chroma_precorrect_lowpass = utils.iirdesign(2.0 * config.bandwidth3db / line_config.fs,
+                                                          2.0 * config.bandwidth20db / line_config.fs, 3.0, 20.0)
         self._demodulate_resample_factor = 3
 
         self._demodulate_upsampled_baseband_filter, \
         self._demodulate_upsampled_filter, \
-        self._demodulate_upsampled_filter_phase_shift = NiirModem._demodulate_am_design(2.0 * config.fsc / fs,
-                                                                                        2.0 * config.bandwidth3db / fs,
-                                                                                        2.0 * config.bandwidth20db / fs,
-                                                                                        3.0, 20.0,
-                                                                                        self._demodulate_resample_factor)
+        self._demodulate_upsampled_filter_phase_shift = NiirModem._demodulate_am_design(
+            2.0 * config.fsc / line_config.fs, 2.0 * config.bandwidth3db / line_config.fs,
+            2.0 * config.bandwidth20db / line_config.fs, 3.0, 20.0, self._demodulate_resample_factor)
 
         self._last_frame = -1
         self._last_line = -1
@@ -67,10 +66,10 @@ class NiirModem(object):
         return NiirModem._decode_niir_components(luma, saturation * numpy.sin(hue), saturation * numpy.cos(hue))
 
     def _modulate_precorrected_chroma(self, frame, line, updb, updr):
-        start_phase = self.config.start_phase(frame, line)
+        start_phase = self.start_phase(frame, line)
         phase = numpy.linspace(start=start_phase, stop=start_phase + len(updb) * self._carrier_phase_step,
                                num=len(updb), endpoint=False) % (2.0 * numpy.pi)
-        if not self.config.is_alternate_line(frame, line):
+        if not self.line_config.is_alternate_line(frame, line):
             return updb * numpy.sin(phase) + updr * numpy.cos(phase)
         else:
             return -numpy.sqrt(updb * updb + updr * updr) * numpy.sin(phase)
@@ -105,14 +104,14 @@ class NiirModem(object):
         saturation_up = self._demodulate_upsampled_baseband_filter(demod_up)
         phasemod_up = modulated_up / saturation_up
 
-        if not self.config.is_alternate_line(frame, line):
+        if not self.line_config.is_alternate_line(frame, line):
             carrier_up = self._last_phasemod_up
             huemod_up = phasemod_up
-            shift = self.config.line_shift
+            shift = self.line_shift
         else:
             carrier_up = phasemod_up
             huemod_up = self._last_phasemod_up
-            shift = -self.config.line_shift
+            shift = -self.line_shift
 
         shifted_carrier_up = 0.5 * (carrier_up[0:-1] + carrier_up[1:])
         altcarrier_up = numpy.concatenate((numpy.zeros(1), numpy.diff(shifted_carrier_up), numpy.zeros(
@@ -137,8 +136,8 @@ class NiirModem(object):
         if strip_chroma:
             sincarrier = scipy.signal.resample_poly(carrier_up, up=1, down=self._demodulate_resample_factor)
             coscarrier = scipy.signal.resample_poly(altcarrier_up, up=1, down=self._demodulate_resample_factor)
-            if not self.config.is_alternate_line(frame, line):
-                phase_shift = self.config.line_shift
+            if not self.line_config.is_alternate_line(frame, line):
+                phase_shift = self.line_shift
                 u_signal = db
                 v_signal = dr
             else:
@@ -155,18 +154,6 @@ class NiirModem(object):
         self._last_frame = frame
         self._last_line = line
         return luma, db, dr
-
-    @staticmethod
-    def encode_composite_level(value):
-        # max excursion: 933/700
-        # white level: 1
-        # black level: 0
-        # min excursion: -233/700
-        return (value * 700.0 + 233.0) / 1166.0
-
-    @staticmethod
-    def decode_composite_level(value):
-        return (value * 1166.0 - 233.0) / 700.0
 
 
 class HueCorrectingNiirModem(NiirModem):

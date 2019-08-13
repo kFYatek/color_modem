@@ -3,24 +3,26 @@
 import numpy
 
 from color_modem import comb, qam
-from color_modem.qam import AbstractQamColorModem
 
 
 class NtscVariant(qam.QamConfig):
-    def __new__(cls, fsc, lines=525):
-        return NtscVariant.__base__.__new__(cls, fsc, 1300000.0, 3600000.0, lines)
+    def __new__(cls, fsc, bandwidth3db=1300000.0, bandwidth20db=3600000.0):
+        return NtscVariant.__base__.__new__(cls, fsc, bandwidth3db, bandwidth20db)
 
 
 NtscVariant.NTSC = NtscVariant(fsc=227.5 * 15750.0 * 1000.0 / 1001.0)
-NtscVariant.NTSC_I = NtscVariant(fsc=4429687.5, lines=625)
+NtscVariant.NTSC_A = NtscVariant(fsc=2657812.5, bandwidth3db=1000000.0, bandwidth20db=2500000.0)
+NtscVariant.NTSC_I = NtscVariant(fsc=4429687.5)
 NtscVariant.NTSC443 = NtscVariant(fsc=4433618.75)
+# CCIR documents mention NTSC-N
+NtscVariant.NTSC_N = NtscVariant(fsc=3585937.5)
 # This is the weird mode that Raspberry Pi actually outputs when nominally set to PAL-M
 NtscVariant.NTSC361 = NtscVariant(fsc=229.5 * 15750.0 * 1000.0 / 1001.0)
 
 
-class NtscModem(AbstractQamColorModem):
-    def __init__(self, variant=NtscVariant.NTSC, fs=13500000.0):
-        super(NtscModem, self).__init__(fs, variant)
+class NtscModem(qam.AbstractQamColorModem):
+    def __init__(self, line_config, variant=NtscVariant.NTSC):
+        super(NtscModem, self).__init__(line_config, variant)
 
     @staticmethod
     def encode_yuv(r, g, b):
@@ -39,31 +41,18 @@ class NtscModem(AbstractQamColorModem):
         return r, g, b
 
     def modulate_yuv(self, frame, line, y, u, v):
-        start_phase = self.config.start_phase(frame, line)
+        start_phase = self.start_phase(frame, line)
         return self.qam.modulate(start_phase, y, u, v)
 
     def demodulate_yuv(self, frame, line, *args, **kwargs):
-        start_phase = self.config.start_phase(frame, line)
+        start_phase = self.start_phase(frame, line)
         return self.qam.demodulate(start_phase, *args, **kwargs)
-
-    @staticmethod
-    def encode_composite_level(value):
-        # max excursion: 936/714
-        # white level: 1
-        # black level: 0
-        # min excursion: -164/714
-        return (value * 714.0 + 164.0) / 1100.0
-        return numpy.maximum(numpy.minimum(adjusted, 1.0), 0.0)
-
-    @staticmethod
-    def decode_composite_level(value):
-        return (value * 1100.0 - 164.0) / 714.0
 
 
 class NtscCombModem(comb.AbstractCombModem):
-    def __init__(self, variant=NtscVariant.NTSC, fs=13500000.0, *args, **kwargs):
-        super(NtscCombModem, self).__init__(NtscModem(variant, fs), *args, **kwargs)
-        sine = numpy.sin(self.backend.config.line_shift * 0.5)
+    def __init__(self, line_config, variant=NtscVariant.NTSC, *args, **kwargs):
+        super(NtscCombModem, self).__init__(NtscModem(line_config, variant), *args, **kwargs)
+        sine = numpy.sin(self.backend.line_shift * 0.5)
         if abs(sine) > 0.05:
             self._factor = 0.5 / sine
         else:
@@ -82,7 +71,7 @@ class NtscCombModem(comb.AbstractCombModem):
         if not numpy.isfinite(self._factor):
             return self.backend.demodulate_yuv(frame, line, curr, strip_chroma=False)
 
-        diff_phase = self.backend.config.start_phase(frame, line) - 0.5 * self.backend.config.line_shift
+        diff_phase = self.backend.start_phase(frame, line) - 0.5 * self.backend.line_shift
         if diff_phase < 0.0:
             diff_phase += 2.0 * numpy.pi
 

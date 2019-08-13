@@ -12,6 +12,18 @@ class ImageModem(object):
     def __init__(self, modem):
         self._modem = modem
 
+    @staticmethod
+    def encode_composite_level(value):
+        # max excursion: 933/700
+        # white level: 1
+        # black level: 0
+        # min excursion: -233/700
+        return 0.6 * value + 0.2
+
+    @staticmethod
+    def decode_composite_level(value):
+        return (5.0 * value - 1.0) / 3.0
+
     def modulate(self, img, frame=0):
         if img.mode != 'RGB':
             img = img.convert('RGB')
@@ -39,7 +51,7 @@ class ImageModem(object):
                 input_y = y + 2 * modulation_delay
                 while input_y >= img.height:
                     input_y -= 2
-                output(y, _as_bytes(self._modem.encode_composite_level(
+                output(y, _as_bytes(self.encode_composite_level(
                     self._modem.modulate(frame, y + 2 * modulation_delay, *get_lines(input_y)))))
         return Image.frombytes('L', (len(output.data) / img.height, img.height), bytes(bytearray(output.data)))
 
@@ -47,7 +59,7 @@ class ImageModem(object):
 
         if img.mode != 'L':
             img = img.convert('L')
-        composite = self._modem.decode_composite_level(numpy.array(img.getdata()) / 255.0)
+        composite = self.decode_composite_level(numpy.array(img.getdata()) / 255.0)
         demodulation_delay = getattr(self._modem, 'demodulation_delay', 0)
 
         def output(y, r_bytes, g_bytes, b_bytes):

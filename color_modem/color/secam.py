@@ -95,27 +95,42 @@ SecamVariant.SECAM_M = SecamVariant(fsc_dr=227.5 * 15750.0 * 1000.0 / 1001.0,
                                     lf_precorrect_f1=70000.0,
                                     lf_precorrect_k=5.6)
 
+# CCIR documents mention SECAM-N alongside SECAM-M. Most likely it was similar to SECAM-M.
+SecamVariant.SECAM_N = SecamVariant(fsc_dr=3578125.0,
+                                    fsc_db=3578125,
+                                    fdev_dr=230000.0,
+                                    fdev_db=230000.0,
+                                    flimit_min=3078125.0,
+                                    flimit_max=4078125.0,
+                                    m0=0.1,
+                                    bell_f0=3578125.0,
+                                    bell_kn=16.0,
+                                    bell_kd=1.26,
+                                    lf_precorrect_f1=70000.0,
+                                    lf_precorrect_k=5.6)
+
 
 class SecamModem(object):
-    def __init__(self, variant=SecamVariant.SECAM, alternate_phases=False, fs=13500000.0):
+    def __init__(self, line_config, variant=SecamVariant.SECAM, alternate_phases=False):
+        self._line_config = line_config
         self._variant = variant
-        self._fsc_dr = 2.0 * variant.fsc_dr / fs
-        self._fsc_db = 2.0 * variant.fsc_db / fs
-        self._fdev_dr = 2.0 * variant.fdev_dr / fs
-        self._fdev_db = 2.0 * variant.fdev_db / fs
-        self._flimit_min = 2.0 * variant.flimit_min / fs
-        self._flimit_max = 2.0 * variant.flimit_max / fs
-        self._bell_f0 = 2.0 * variant.bell_f0 / fs
+        self._fsc_dr = 2.0 * variant.fsc_dr / line_config.fs
+        self._fsc_db = 2.0 * variant.fsc_db / line_config.fs
+        self._fdev_dr = 2.0 * variant.fdev_dr / line_config.fs
+        self._fdev_db = 2.0 * variant.fdev_db / line_config.fs
+        self._flimit_min = 2.0 * variant.flimit_min / line_config.fs
+        self._flimit_max = 2.0 * variant.flimit_max / line_config.fs
+        self._bell_f0 = 2.0 * variant.bell_f0 / line_config.fs
         if not alternate_phases:
             self._start_phase_inversions = [False, False, True, False, False, True]
         else:
             self._start_phase_inversions = [False, False, False, True, True, True]
         self._chroma_demod_bell = self._chroma_demod_bell_design(self._bell_f0, self._flimit_max,
                                                                  variant.bell_kn, variant.bell_kd)
-        self._chroma_precorrect_lowpass = utils.iirdesign(wp=2.0 * 1300000.0 / fs, ws=2.0 * 3500000.0 / fs,
-                                                          gpass=3.0, gstop=30.0)
+        self._chroma_precorrect_lowpass = utils.iirdesign(wp=2.0 * 1300000.0 / line_config.fs,
+                                                          ws=2.0 * 3500000.0 / line_config.fs, gpass=3.0, gstop=30.0)
         self._chroma_precorrect, self._reverse_chroma_precorrect = SecamModem._chroma_precorrect_design(
-            2.0 * variant.lf_precorrect_f1 / fs, variant.lf_precorrect_k)
+            2.0 * variant.lf_precorrect_f1 / line_config.fs, variant.lf_precorrect_k)
 
         center = 0.5 * (self._flimit_min + self._flimit_max)
         dev = 0.5 * (self._flimit_max - self._flimit_min)
@@ -190,18 +205,6 @@ class SecamModem(object):
         phase = (start_phase - phase_shift[0] - numpy.angle(bigG[0]) + numpy.cumsum(phase_shift)) % (2.0 * numpy.pi)
         return numpy.real(bigG) * numpy.cos(phase) - numpy.imag(bigG) * numpy.sin(phase)
 
-    @staticmethod
-    def _is_alternate_line(frame, line):
-        # For 525-line system:
-        #
-        # For 625-line system:
-        #
-        # digital line 0 ~ analog line 23 (even fields 1 & 3)
-        # digital line 1 ~ analog line 336 (odd fields 2 & 4)
-        # digital line 2 - analog line 24 (even fields 1 & 3)
-        # digital line 3 - analog line 337 (odd fields 2 & 4)
-        return ((line % 2) ^ ((line // 2) % 2)) != frame % 2
-
     def _start_phase_inverted(self, frame, line):
         assert len(self._start_phase_inversions) == 6
         frame %= 6
@@ -216,7 +219,7 @@ class SecamModem(object):
         return self.modulate_secam_components(frame, line, *self.encode_secam_components(r, g, b))
 
     def modulate_secam_components(self, frame, line, luma, dr, db):
-        if not SecamModem._is_alternate_line(frame, line):
+        if not self._line_config.is_alternate_line(frame, line):
             chroma_frequencies = self._fsc_dr + self._fdev_dr * self._chroma_precorrect(
                 self._chroma_precorrect_lowpass(dr))
         else:
@@ -263,12 +266,12 @@ class SecamModem(object):
 
         frequencies = self._chroma_demod(chroma)[-len(composite):]
         frequencies = numpy.minimum(numpy.maximum(frequencies, self._flimit_min), self._flimit_max)
-        if not SecamModem._is_alternate_line(frame, line):
+        if not self._line_config.is_alternate_line(frame, line):
             chroma = (frequencies - self._fsc_dr) / self._fdev_dr
         else:
             chroma = (frequencies - self._fsc_db) / self._fdev_db
         chroma = self._reverse_chroma_precorrect(chroma)
-        if not SecamModem._is_alternate_line(frame, line):
+        if not self._line_config.is_alternate_line(frame, line):
             self._last_chroma, dr, db = chroma, chroma, self._last_chroma
         else:
             self._last_chroma, dr, db = chroma, self._last_chroma, chroma
@@ -276,18 +279,6 @@ class SecamModem(object):
         self._last_frame = frame
         self._last_line = line
         return self.decode_secam_components(luma, dr, db)
-
-    @staticmethod
-    def encode_composite_level(value):
-        # max excursion: 933/700
-        # white level: 1
-        # black level: 0
-        # min excursion: -233/700
-        return (value * 700.0 + 233.0) / 1166.0
-
-    @staticmethod
-    def decode_composite_level(value):
-        return (value * 1166.0 - 233.0) / 700.0
 
 
 class AveragingSecamModem(SecamModem):

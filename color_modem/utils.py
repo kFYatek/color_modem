@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import fractions
+
 import numpy
 import scipy.signal
 
@@ -59,3 +61,27 @@ def iirsplitter(wc, wp, ws, gpass, gstop, ftype='butter', shift=True, pass_phase
     bstop = iirdesign_wc(wc, ws, wp, invert_db(gstop), invert_db(gpass), ftype, shift, stop_phase_shift)
 
     return (bpass if pass_phase_shift else (bpass,)) + (bstop if stop_phase_shift else (bstop,))
+
+
+class ConstantFrequencyCarrier(object):
+    @property
+    def line_shift(self):
+        return 2.0 * numpy.pi * ((self.config.fsc / (
+                self.line_config.line_standard.frame_rate * self.line_config.line_standard.total_lines)) % 1.0)
+
+    @property
+    def frame_shift(self):
+        return 2.0 * numpy.pi * ((self.config.fsc / self.line_config.line_standard.frame_rate) % 1.0)
+
+    @property
+    def frame_cycle(self):
+        return fractions.Fraction(
+            self.config.fsc / self.line_config.line_standard.frame_rate).limit_denominator().denominator
+
+    def start_phase(self, frame, line):
+        reference_line = min(self.line_config.line_standard.odd_field_first_active_line,
+                             self.line_config.line_standard.even_field_first_active_line)
+        frame %= self.frame_cycle
+        frame_shift = (frame * self.frame_shift) % (2.0 * numpy.pi)
+        line_shift = ((self.line_config.analog_line(line) - reference_line) * self.line_shift) % (2.0 * numpy.pi)
+        return (frame_shift + line_shift) % (2.0 * numpy.pi)

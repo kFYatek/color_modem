@@ -12,7 +12,7 @@ def minavg(val1, val2):
 
 
 def _notch(qam_modem, q):
-    b, a = scipy.signal.iirnotch(2.0 * qam_modem.config.fsc / qam_modem.fs, q)
+    b, a = scipy.signal.iirnotch(2.0 * qam_modem.config.fsc / qam_modem.line_config.fs, q)
     return lambda x: scipy.signal.lfilter(b, a, x)
 
 
@@ -31,8 +31,8 @@ class AbstractCombModem(object):
         return self.backend.config
 
     @property
-    def fs(self):
-        return self.backend.fs
+    def line_config(self):
+        return self.backend.line_config
 
     def modulate_yuv(self, frame, line, y, u, v):
         return self.backend.modulate_yuv(frame, line, y, u, v)
@@ -59,12 +59,6 @@ class AbstractCombModem(object):
 
     def demodulate(self, *args, **kwargs):
         return self.backend.decode_yuv(*self.demodulate_yuv(*args, **kwargs))
-
-    def encode_composite_level(self, value):
-        return self.backend.encode_composite_level(value)
-
-    def decode_composite_level(self, value):
-        return self.backend.decode_composite_level(value)
 
 
 class SimpleCombModem(object):
@@ -115,12 +109,6 @@ class SimpleCombModem(object):
 
     def demodulate(self, *args, **kwargs):
         return self.backend.decode_yuv(*self.demodulate_yuv(*args, **kwargs))
-
-    def encode_composite_level(self, value):
-        return self.backend.encode_composite_level(value)
-
-    def decode_composite_level(self, value):
-        return self.backend.decode_composite_level(value)
 
 
 class Simple3DCombModem(SimpleCombModem):

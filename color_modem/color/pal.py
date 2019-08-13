@@ -7,8 +7,8 @@ from color_modem import qam, comb, utils
 
 
 class PalVariant(qam.QamConfig):
-    def __new__(cls, fsc, lines=625, bandwidth20db=4000000.0):
-        return PalVariant.__base__.__new__(cls, fsc, 1300000.0, bandwidth20db, lines)
+    def __new__(cls, fsc, bandwidth20db=4000000.0):
+        return PalVariant.__base__.__new__(cls, fsc, 1300000.0, bandwidth20db)
 
     @property
     def frame_cycle(self):
@@ -20,13 +20,14 @@ class PalVariant(qam.QamConfig):
 
 
 PalVariant.PAL = PalVariant(fsc=4433618.75)
-PalVariant.PAL_M = PalVariant(fsc=227.25 * 15750.0 * 1000.0 / 1001.0, lines=525, bandwidth20db=3600000.0)
+PalVariant.PAL_A = PalVariant(fsc=2660343.75)
+PalVariant.PAL_M = PalVariant(fsc=227.25 * 15750.0 * 1000.0 / 1001.0, bandwidth20db=3600000.0)
 PalVariant.PAL_N = PalVariant(fsc=3582056.25, bandwidth20db=3600000.0)
 
 
 class PalSModem(qam.AbstractQamColorModem):
-    def __init__(self, variant=PalVariant.PAL, fs=13500000.0):
-        super(PalSModem, self).__init__(fs, variant)
+    def __init__(self, line_config, variant=PalVariant.PAL):
+        super(PalSModem, self).__init__(line_config, variant)
 
     @staticmethod
     def encode_yuv(r, g, b):
@@ -45,36 +46,24 @@ class PalSModem(qam.AbstractQamColorModem):
         return r, g, b
 
     def modulate_yuv(self, frame, line, y, u, v):
-        start_phase = self.config.start_phase(frame, line)
-        if self.config.is_alternate_line(frame, line):
+        start_phase = self.start_phase(frame, line)
+        if self.line_config.is_alternate_line(frame, line):
             v = -numpy.array(v, copy=False)
         return self.qam.modulate(start_phase, y, u, v)
 
     def demodulate_yuv(self, frame, line, *args, **kwargs):
-        start_phase = self.config.start_phase(frame, line)
+        start_phase = self.start_phase(frame, line)
         y, u, v = self.qam.demodulate(start_phase, *args, **kwargs)
-        if self.config.is_alternate_line(frame, line):
+        if self.line_config.is_alternate_line(frame, line):
             v = -numpy.array(v, copy=False)
         return y, u, v
 
-    @staticmethod
-    def encode_composite_level(value):
-        # max excursion: 933/700
-        # white level: 1
-        # black level: 0
-        # min excursion: -233/700
-        return (value * 700.0 + 233.0) / 1166.0
-
-    @staticmethod
-    def decode_composite_level(value):
-        return (value * 1166.0 - 233.0) / 700.0
-
 
 class PalDModem(comb.AbstractCombModem):
-    def __init__(self, variant=PalVariant.PAL, fs=13500000.0, *args, **kwargs):
-        super(PalDModem, self).__init__(PalSModem(variant, fs), *args, **kwargs)
-        self._sin_factor = numpy.sin(0.5 * self.backend.config.line_shift)
-        self._cos_factor = numpy.cos(0.5 * self.backend.config.line_shift)
+    def __init__(self, line_config, variant=PalVariant.PAL, *args, **kwargs):
+        super(PalDModem, self).__init__(PalSModem(line_config, variant), *args, **kwargs)
+        self._sin_factor = numpy.sin(0.5 * self.backend.line_shift)
+        self._cos_factor = numpy.cos(0.5 * self.backend.line_shift)
         self._filter = utils.iirfilter(6, (
                 1.0 - 1300000.0 / self.backend.config.fsc) * self.backend.qam.carrier_phase_step / numpy.pi,
                                        rs=48.0, btype='lowpass', ftype='cheby2')
@@ -121,9 +110,8 @@ class PalDModem(comb.AbstractCombModem):
         last = numpy.array(last, copy=False)
         curr = numpy.array(curr, copy=False)
 
-        diff_phase = (self.backend.config.start_phase(frame, line) +
-                      self.backend.qam.extract_chroma_phase_shift - 0.5 * self.backend.config.line_shift) % (
-                             2.0 * numpy.pi)
+        diff_phase = (self.backend.start_phase(frame, line) + self.backend.qam.extract_chroma_phase_shift
+                      - 0.5 * self.backend.line_shift) % (2.0 * numpy.pi)
 
         sumsig = self.backend.qam.extract_chroma(curr + last)
         diff = self.backend.qam.extract_chroma(curr - last)
@@ -133,7 +121,7 @@ class PalDModem(comb.AbstractCombModem):
 
         u = diff * self._sin_factor + sumsig * self._cos_factor
         v = diff * self._cos_factor - sumsig * self._sin_factor
-        if self.backend.config.is_alternate_line(frame, line):
+        if self.backend.line_config.is_alternate_line(frame, line):
             v *= -1.0
 
         return curr, u, v
@@ -164,11 +152,11 @@ class Pal3DModem(PalDModem):
         self._last_demodulated = None
         self.demodulation_delay = 1
 
-        lssin = numpy.sin(self.backend.config.line_shift)
+        lssin = numpy.sin(self.backend.line_shift)
         if abs(lssin) < 0.1:
             use_sin = False
 
-        lscos = numpy.cos(self.backend.config.line_shift)
+        lscos = numpy.cos(self.backend.line_shift)
         if abs(lscos) > 0.9:
             use_cos = False
 
@@ -215,7 +203,7 @@ class Pal3DModem(PalDModem):
             sumsig = curr_diff + self._last_diff
             diffsig = curr_diff - self._last_diff
 
-            start_phase = self.backend.config.start_phase(frame, line - 2)
+            start_phase = self.backend.start_phase(frame, line - 2)
             sumsig = self.backend.qam.demodulate(start_phase, sumsig, strip_chroma=False)
             diffsig = self.backend.qam.demodulate(start_phase, diffsig, strip_chroma=False)
 
@@ -229,7 +217,7 @@ class Pal3DModem(PalDModem):
                 u = self._cos_u_factor * diffsig[1]
                 v = self._cos_v_factor * diffsig[2]
 
-            if self.backend.config.is_alternate_line(frame, line - 2):
+            if self.backend.line_config.is_alternate_line(frame, line - 2):
                 v *= -1.0
 
             y = self._last_composite
