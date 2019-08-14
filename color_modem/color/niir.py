@@ -39,7 +39,7 @@ class NiirModem(utils.ConstantFrequencyCarrier):
         dr = 0.6149122807017545 * r - 0.5149122807017544 * g - 0.1 * b
         return luma, db, dr
 
-    def encode_yuv(self, r, g, b):
+    def _encode_offset_components(self, r, g, b):
         luma, db, dr = NiirModem._encode_niir_components(r, g, b)
         saturation = numpy.sqrt(db * db + dr * dr) + 0.1
         if self._noise_level != 0.0:
@@ -60,7 +60,7 @@ class NiirModem(utils.ConstantFrequencyCarrier):
         return r, g, b
 
     @staticmethod
-    def decode_yuv(luma, db, dr):
+    def _decode_offset_components(luma, db, dr):
         saturation = numpy.maximum(numpy.sqrt(db * db + dr * dr) - 0.1, 0.0)
         hue = numpy.arctan2(db, dr)
         return NiirModem._decode_niir_components(luma, saturation * numpy.sin(hue), saturation * numpy.cos(hue))
@@ -75,9 +75,9 @@ class NiirModem(utils.ConstantFrequencyCarrier):
             return -numpy.sqrt(updb * updb + updr * updr) * numpy.sin(phase)
 
     def modulate(self, frame, line, r, g, b):
-        return self.modulate_yuv(frame, line, *self.encode_yuv(r, g, b))
+        return self._modulate_offset_components(frame, line, *self._encode_offset_components(r, g, b))
 
-    def modulate_yuv(self, frame, line, luma, db, dr):
+    def _modulate_offset_components(self, frame, line, luma, db, dr):
         # TODO: Take the next line's hue into consideration when encoding
         db = self._chroma_precorrect_lowpass(db)
         dr = self._chroma_precorrect_lowpass(dr)
@@ -90,9 +90,9 @@ class NiirModem(utils.ConstantFrequencyCarrier):
             wc / resample_factor, wp / resample_factor, ws / resample_factor, gpass, gstop, phase_shift=True)
 
     def demodulate(self, frame, line, *args, **kwargs):
-        return self.decode_yuv(*self.demodulate_yuv(frame, line, *args, **kwargs))
+        return self._decode_offset_components(*self._demodulate_offset_components(frame, line, *args, **kwargs))
 
-    def demodulate_yuv(self, frame, line, composite, strip_chroma=True):
+    def _demodulate_offset_components(self, frame, line, composite, strip_chroma=True):
         if frame != self._last_frame or line != self._last_line + 2 or self._last_phasemod_up is None:
             last_modulated = self._modulate_precorrected_chroma(frame, line - 2, numpy.ones(len(composite)), 0.0)
             self._last_phasemod_up = self._demodulate_upsampled_filter(
@@ -190,4 +190,4 @@ class HueCorrectingNiirModem(NiirModem):
         self._last_dr = dr
         self._last_modulated_frame = frame
         self._last_modulated_line = line
-        return self.modulate_yuv(frame, line - 2, luma, dbep, drep)
+        return self._modulate_offset_components(frame, line - 2, luma, dbep, drep)
