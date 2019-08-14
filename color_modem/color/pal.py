@@ -30,7 +30,7 @@ class PalSModem(qam.AbstractQamColorModem):
         super(PalSModem, self).__init__(line_config, variant)
 
     @staticmethod
-    def encode_yuv(r, g, b):
+    def encode_components(r, g, b):
         assert len(r) == len(g) == len(b)
         y = 0.299 * r + 0.587 * g + 0.114 * b
         u = -0.147407 * r - 0.289391 * g + 0.436798 * b
@@ -38,20 +38,20 @@ class PalSModem(qam.AbstractQamColorModem):
         return y, u, v
 
     @staticmethod
-    def decode_yuv(y, u, v):
+    def decode_components(y, u, v):
         assert len(y) == len(u) == len(v)
         r = y + 1.140250855188141 * v
         g = y - 0.5808092090310976 * v - 0.3939307027516405 * u
         b = y + 2.028397565922921 * u
         return r, g, b
 
-    def modulate_yuv(self, frame, line, y, u, v):
+    def modulate_components(self, frame, line, y, u, v):
         start_phase = self.start_phase(frame, line)
         if self.line_config.is_alternate_line(frame, line):
             v = -numpy.array(v, copy=False)
         return self.qam.modulate(start_phase, y, u, v)
 
-    def demodulate_yuv(self, frame, line, *args, **kwargs):
+    def demodulate_components(self, frame, line, *args, **kwargs):
         start_phase = self.start_phase(frame, line)
         y, u, v = self.qam.demodulate(start_phase, *args, **kwargs)
         if self.line_config.is_alternate_line(frame, line):
@@ -76,7 +76,7 @@ class PalDModem(comb.AbstractCombModem):
         data2x = self._filter(data2x)
         return scipy.signal.resample_poly(data2x, up=1, down=2)
 
-    def demodulate_yuv_combed(self, frame, line, last, curr):
+    def demodulate_components_combed(self, frame, line, last, curr):
         # PAL-BDGHIK: LS = %pi*1879/1250 ~= %pi*3/2
         # PAL-M:      LS = %pi/2
         # PAL-N:      LS = %pi*629/1250 ~= %pi/2
@@ -177,9 +177,9 @@ class Pal3DModem(PalDModem):
         else:
             self._avg = lambda a, b: 0.5 * (a + b)
 
-    def demodulate_yuv(self, frame, line, composite, strip_chroma=True, *args, **kwargs):
+    def demodulate_components(self, frame, line, composite, strip_chroma=True, *args, **kwargs):
         if not (self._use_sin or self._use_cos):
-            return super(Pal3DModem, self).demodulate_yuv(frame, line, composite, strip_chroma, *args, **kwargs)
+            return super(Pal3DModem, self).demodulate_components(frame, line, composite, strip_chroma, *args, **kwargs)
 
         # (PAL(n+2) - PAL(n+1)) + (PAL(n+1) - PAL(n)) = 2*(U(x)*sin(LS/2) - V(x)*cos(LS/2))*cos(wt(x) + LS*(n + 3/2)) + 2*(U(x)*sin(LS/2) + V(x)*cos(LS/2))*cos(wt(x) + LS*(n + 1/2))
         # (PAL(n+2) - PAL(n+1)) - (PAL(n+1) - PAL(n)) = 2*(U(x)*sin(LS/2) - V(x)*cos(LS/2))*cos(wt(x) + LS*(n + 3/2)) - 2*(U(x)*sin(LS/2) + V(x)*cos(LS/2))*cos(wt(x) + LS*(n + 1/2))
@@ -190,8 +190,8 @@ class Pal3DModem(PalDModem):
 
         if frame != self._last_frame or line != self._last_line + 2:
             self._last_diff = None
-            self._last_demodulated = super(Pal3DModem, self).demodulate_yuv(frame, line, composite, strip_chroma=False,
-                                                                            *args, **kwargs)
+            self._last_demodulated = super(Pal3DModem, self).demodulate_components(frame, line, composite, strip_chroma=False,
+                                                                                   *args, **kwargs)
             return self._last_demodulated
 
         assert self._last_composite is not None
@@ -223,7 +223,7 @@ class Pal3DModem(PalDModem):
             y = self._last_composite
 
         if strip_chroma:
-            y = y - self.backend.modulate_yuv(frame, line - 2, numpy.zeros(len(composite)), u, v)
+            y = y - self.backend.modulate_components(frame, line - 2, numpy.zeros(len(composite)), u, v)
             if self.notch:
                 y = self.notch(y)
 

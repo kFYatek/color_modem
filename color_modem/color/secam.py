@@ -146,7 +146,7 @@ class SecamModem(object):
         self._last_chroma = None
 
     @staticmethod
-    def encode_secam_components(r, g, b):
+    def encode_components(r, g, b):
         assert len(r) == len(g) == len(b)
         luma = 0.299 * r + 0.587 * g + 0.114 * b
         dr = -1.333302 * r + 1.116474 * g + 0.216828 * b
@@ -156,7 +156,7 @@ class SecamModem(object):
         return luma, dr, db
 
     @staticmethod
-    def decode_secam_components(luma, dr, db):
+    def decode_components(luma, dr, db):
         assert len(luma) == len(dr) == len(db)
         r = luma - 0.5257623554153522 * dr
         g = luma + 0.2678074007993021 * dr - 0.1290417517983779 * db
@@ -216,9 +216,9 @@ class SecamModem(object):
         return self._start_phase_inversions[line_in_sequence] ^ (frame % 2 == 1)
 
     def modulate(self, frame, line, r, g, b):
-        return self.modulate_secam_components(frame, line, *self.encode_secam_components(r, g, b))
+        return self.modulate_components(frame, line, *self.encode_components(r, g, b))
 
-    def modulate_secam_components(self, frame, line, luma, dr, db):
+    def modulate_components(self, frame, line, luma, dr, db):
         if not self._line_config.is_alternate_line(frame, line):
             chroma_frequencies = self._fsc_dr + self._fdev_dr * self._chroma_precorrect(
                 self._chroma_precorrect_lowpass(dr))
@@ -278,28 +278,4 @@ class SecamModem(object):
 
         self._last_frame = frame
         self._last_line = line
-        return self.decode_secam_components(luma, dr, db)
-
-
-class AveragingSecamModem(SecamModem):
-    def __init__(self, *args, **kwargs):
-        super(AveragingSecamModem, self).__init__(*args, **kwargs)
-        self.modulation_delay = 1
-        self._last_modulated_frame = -1
-        self._last_modulated_line = -1
-        self._last_y = None
-        self._last_u = None
-        self._last_v = None
-
-    def modulate_secam_components(self, frame, line, y, u, v):
-        if frame != self._last_modulated_frame or line != self._last_modulated_line + 2 \
-                or self._last_u is None or self._last_v is None:
-            self._last_y = y
-            self._last_u = u
-            self._last_v = v
-        self._last_y, y = y, self._last_y
-        self._last_u, u = u, 0.5 * (u + self._last_u)
-        self._last_v, v = v, 0.5 * (v + self._last_v)
-        self._last_modulated_frame = frame
-        self._last_modulated_line = line
-        return super(AveragingSecamModem, self).modulate_secam_components(frame, line - 2, y, u, v)
+        return self.decode_components(luma, dr, db)

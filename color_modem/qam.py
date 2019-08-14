@@ -63,10 +63,10 @@ class AbstractQamColorModem(utils.ConstantFrequencyCarrier):
                                  2.0 * config.bandwidth20db / line_config.fs, 3.0, 20.0)
 
     def modulate(self, frame, line, r, g, b):
-        return self.modulate_yuv(frame, line, *self.encode_yuv(r, g, b))
+        return self.modulate_components(frame, line, *self.encode_components(r, g, b))
 
     def demodulate(self, frame, line, *args, **kwargs):
-        return self.decode_yuv(*self.demodulate_yuv(frame, line, *args, **kwargs))
+        return self.decode_components(*self.demodulate_components(frame, line, *args, **kwargs))
 
 
 """

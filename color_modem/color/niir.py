@@ -29,7 +29,7 @@ class NiirModem(utils.ConstantFrequencyCarrier):
         self._last_phasemod_up = None
 
     @staticmethod
-    def _encode_niir_components(r, g, b):
+    def encode_components(r, g, b):
         assert len(r) == len(g) == len(b)
         r = numpy.array(r, copy=False)
         g = numpy.array(g, copy=False)
@@ -39,17 +39,18 @@ class NiirModem(utils.ConstantFrequencyCarrier):
         dr = 0.6149122807017545 * r - 0.5149122807017544 * g - 0.1 * b
         return luma, db, dr
 
-    def _encode_offset_components(self, r, g, b):
-        luma, db, dr = NiirModem._encode_niir_components(r, g, b)
+    def _add_offset(self, db, dr, noise_level=None):
+        if noise_level is None:
+            noise_level = self._noise_level
         saturation = numpy.sqrt(db * db + dr * dr) + 0.1
-        if self._noise_level != 0.0:
+        if noise_level != 0.0:
             db += (numpy.random.random_sample(len(db)) - 0.5) * self._noise_level
             dr += (numpy.random.random_sample(len(dr)) - 0.5) * self._noise_level
         hue = numpy.arctan2(db, dr)
-        return luma, saturation * numpy.sin(hue), saturation * numpy.cos(hue)
+        return saturation * numpy.sin(hue), saturation * numpy.cos(hue)
 
     @staticmethod
-    def _decode_niir_components(luma, db, dr):
+    def decode_components(luma, db, dr):
         assert len(luma) == len(db) == len(dr)
         luma = numpy.array(luma, copy=False)
         db = numpy.array(db, copy=False)
@@ -60,10 +61,10 @@ class NiirModem(utils.ConstantFrequencyCarrier):
         return r, g, b
 
     @staticmethod
-    def _decode_offset_components(luma, db, dr):
+    def _remove_offset(db, dr):
         saturation = numpy.maximum(numpy.sqrt(db * db + dr * dr) - 0.1, 0.0)
         hue = numpy.arctan2(db, dr)
-        return NiirModem._decode_niir_components(luma, saturation * numpy.sin(hue), saturation * numpy.cos(hue))
+        return saturation * numpy.sin(hue), saturation * numpy.cos(hue)
 
     def _modulate_precorrected_chroma(self, frame, line, updb, updr):
         start_phase = self.start_phase(frame, line)
@@ -75,7 +76,11 @@ class NiirModem(utils.ConstantFrequencyCarrier):
             return -numpy.sqrt(updb * updb + updr * updr) * numpy.sin(phase)
 
     def modulate(self, frame, line, r, g, b):
-        return self._modulate_offset_components(frame, line, *self._encode_offset_components(r, g, b))
+        luma, db, dr = self.encode_components(r, g, b)
+        return self._modulate_offset_components(frame, line, luma, *self._add_offset(db, dr))
+
+    def modulate_components(self, frame, line, luma, db, dr):
+        return self._modulate_offset_components(frame, line, luma, *self._add_offset(db, dr, noise_level=0.0))
 
     def _modulate_offset_components(self, frame, line, luma, db, dr):
         # TODO: Take the next line's hue into consideration when encoding
@@ -89,8 +94,12 @@ class NiirModem(utils.ConstantFrequencyCarrier):
         return (utils.iirdesign(wp / resample_factor, ws / resample_factor, gpass, gstop),) + utils.iirdesign_wc(
             wc / resample_factor, wp / resample_factor, ws / resample_factor, gpass, gstop, phase_shift=True)
 
-    def demodulate(self, frame, line, *args, **kwargs):
-        return self._decode_offset_components(*self._demodulate_offset_components(frame, line, *args, **kwargs))
+    def demodulate(self, *args, **kwargs):
+        return NiirModem.decode_components(*self.demodulate_components(*args, **kwargs))
+
+    def demodulate_components(self, *args, **kwargs):
+        luma, db, dr = self._demodulate_offset_components(*args, **kwargs)
+        return (luma,) + self._remove_offset(db, dr)
 
     def _demodulate_offset_components(self, frame, line, composite, strip_chroma=True):
         if frame != self._last_frame or line != self._last_line + 2 or self._last_phasemod_up is None:
@@ -167,7 +176,9 @@ class HueCorrectingNiirModem(NiirModem):
         self._last_dr = None
 
     def modulate(self, frame, line, r, g, b):
-        luma, db, dr = NiirModem._encode_niir_components(r, g, b)
+        return self.modulate_components(frame, line, *NiirModem.encode_components(r, g, b))
+
+    def modulate_components(self, frame, line, luma, db, dr):
         if frame != self._last_modulated_frame or line != self._last_modulated_line + 2 \
                 or self._last_db is None or self._last_dr is None:
             self._last_luma = luma

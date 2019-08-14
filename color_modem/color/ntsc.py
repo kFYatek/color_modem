@@ -25,7 +25,7 @@ class NtscModem(qam.AbstractQamColorModem):
         super(NtscModem, self).__init__(line_config, variant)
 
     @staticmethod
-    def encode_yuv(r, g, b):
+    def encode_components(r, g, b):
         assert len(r) == len(g) == len(b)
         y = 0.3 * r + 0.59 * g + 0.11 * b
         u = -0.1476019510016258 * r - 0.2893575108184752 * g + 0.436959461820101 * b
@@ -33,18 +33,18 @@ class NtscModem(qam.AbstractQamColorModem):
         return y, u, v
 
     @staticmethod
-    def decode_yuv(y, u, v):
+    def decode_components(y, u, v):
         assert len(y) == len(u) == len(v)
         r = 0.9999999999999998 * y + 1.133735501874552 * v + 0.007249535771601484 * u
         g = y - 0.5766784873222262 * v - 0.3834753199055935 * u
         b = y + 0.001087790524980047 * v + 2.037050709207452 * u
         return r, g, b
 
-    def modulate_yuv(self, frame, line, y, u, v):
+    def modulate_components(self, frame, line, y, u, v):
         start_phase = self.start_phase(frame, line)
         return self.qam.modulate(start_phase, y, u, v)
 
-    def demodulate_yuv(self, frame, line, *args, **kwargs):
+    def demodulate_components(self, frame, line, *args, **kwargs):
         start_phase = self.start_phase(frame, line)
         return self.qam.demodulate(start_phase, *args, **kwargs)
 
@@ -58,7 +58,7 @@ class NtscCombModem(comb.AbstractCombModem):
         else:
             self._factor = 1e9001
 
-    def demodulate_yuv_combed(self, frame, line, last, curr):
+    def demodulate_components_combed(self, frame, line, last, curr):
         # NTSC(n) = Y(x) + U(x)*sin(wt(x)+LS*n) + V(x)*cos(wt(x)+LS*n)
         # NTSC(n+1) - NTSC(n) = U(x)*(sin(wt(x)+LS*(n+1)) - sin(wt(x)+LS*n)) + V(x)*(cos(wt(x)+LS*(n+1)) - cos(wt(x)+LS*n))
         # NTSC(n+1) - NTSC(n) = U(x)*2*sin(LS/2)*cos(wt(x) + LS*(n + 1/2)) - V(x)*2*sin(LS/2)*sin(wt(x) + LS*(n + 1/2))
@@ -69,7 +69,7 @@ class NtscCombModem(comb.AbstractCombModem):
         curr = numpy.array(curr, copy=False)
 
         if not numpy.isfinite(self._factor):
-            return self.backend.demodulate_yuv(frame, line, curr, strip_chroma=False)
+            return self.backend.demodulate_components(frame, line, curr, strip_chroma=False)
 
         diff_phase = self.backend.start_phase(frame, line) - 0.5 * self.backend.line_shift
         if diff_phase < 0.0:

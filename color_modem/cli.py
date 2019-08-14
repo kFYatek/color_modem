@@ -4,12 +4,12 @@ import sys
 
 from PIL import Image
 
-from color_modem.color.mac import MacModem, MacVariant, AveragingMacModem
+from color_modem.color.mac import MacModem, MacVariant
 from color_modem.color.niir import NiirModem, HueCorrectingNiirModem
 from color_modem.color.ntsc import NtscCombModem, NtscVariant, NtscModem
 from color_modem.color.pal import Pal3DModem, PalVariant, PalDModem, PalSModem
-from color_modem.color.secam import SecamModem, AveragingSecamModem, SecamVariant
-from color_modem.comb import Simple3DCombModem, SimpleCombModem
+from color_modem.color.secam import SecamModem, SecamVariant
+from color_modem.comb import Simple3DCombModem, SimpleCombModem, ColorAveragingModem
 from color_modem.image import ImageModem
 from color_modem.line import LineStandard, LineConfig
 
@@ -35,7 +35,8 @@ def main():
     # modem = PalSModem(line_config)
 
     #### SECAM
-    modem = AveragingSecamModem(line_config)
+    # better quality modulation - filers out unrepresentable color patterns
+    modem = ColorAveragingModem(SecamModem(line_config))
     # basic
     # modem = SecamModem(line_config)
 
@@ -49,7 +50,7 @@ def main():
 
     #### D2-MAC
     # better quality modulation - filers out unrepresentable color patterns
-    # modem = AveragingMacModem(line_config)
+    # modem = ColorAveragingModem(MacModem(line_config))
     # basic
     # modem = MacModem(line_config)
 

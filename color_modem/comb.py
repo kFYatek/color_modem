@@ -34,19 +34,19 @@ class AbstractCombModem(object):
     def line_config(self):
         return self.backend.line_config
 
-    def modulate_yuv(self, frame, line, y, u, v):
-        return self.backend.modulate_yuv(frame, line, y, u, v)
+    def modulate_components(self, frame, line, y, u, v):
+        return self.backend.modulate_components(frame, line, y, u, v)
 
     def modulate(self, frame, line, r, g, b):
         return self.backend.modulate(frame, line, r, g, b)
 
-    def demodulate_yuv(self, frame, line, composite, strip_chroma=True, *args, **kwargs):
+    def demodulate_components(self, frame, line, composite, strip_chroma=True, *args, **kwargs):
         if frame != self._last_frame or line != self._last_line + 2 or self._last_composite is None:
-            y, u, v = self.backend.demodulate_yuv(frame, line, composite, strip_chroma)
+            y, u, v = self.backend.demodulate_components(frame, line, composite, strip_chroma)
         else:
-            y, u, v = self.demodulate_yuv_combed(frame, line, self._last_composite, composite, *args, **kwargs)
+            y, u, v = self.demodulate_components_combed(frame, line, self._last_composite, composite, *args, **kwargs)
             if strip_chroma:
-                y = y - self.backend.modulate_yuv(frame, line, numpy.zeros(len(composite)), u, v)
+                y = y - self.backend.modulate_components(frame, line, numpy.zeros(len(composite)), u, v)
                 if self.notch:
                     y = self.notch(y)
         self._last_frame = frame
@@ -54,11 +54,14 @@ class AbstractCombModem(object):
         self._last_composite = numpy.array(composite)
         return y, u, v
 
-    def decode_yuv(self, y, u, v):
-        return self.backend.decode_yuv(y, u, v)
+    def encode_components(self, r, g, b):
+        return self.backend.encode_components(r, g, b)
+
+    def decode_components(self, y, u, v):
+        return self.backend.decode_components(y, u, v)
 
     def demodulate(self, *args, **kwargs):
-        return self.backend.decode_yuv(*self.demodulate_yuv(*args, **kwargs))
+        return self.backend.decode_components(*self.demodulate_components(*args, **kwargs))
 
 
 class SimpleCombModem(object):
@@ -80,23 +83,23 @@ class SimpleCombModem(object):
         if notch:
             self._notch = _notch(backend, notch)
 
-    def modulate_yuv(self, frame, line, y, u, v):
-        return self.backend.modulate_yuv(frame, line, y, u, v)
+    def modulate_components(self, frame, line, y, u, v):
+        return self.backend.modulate_components(frame, line, y, u, v)
 
     def modulate(self, frame, line, r, g, b):
         return self.backend.modulate(frame, line, r, g, b)
 
-    def demodulate_yuv(self, frame, line, composite, strip_chroma=True, *args, **kwargs):
+    def demodulate_components(self, frame, line, composite, strip_chroma=True, *args, **kwargs):
         if frame != self._last_frame or line != self._last_line + 2:
-            curr = self.backend.demodulate_yuv(frame, line, composite, strip_chroma=False, *args, **kwargs)
+            curr = self.backend.demodulate_components(frame, line, composite, strip_chroma=False, *args, **kwargs)
             y, u, v = curr
         else:
-            curr = self.backend.demodulate_yuv(frame, line, composite, strip_chroma=False, *args, **kwargs)
+            curr = self.backend.demodulate_components(frame, line, composite, strip_chroma=False, *args, **kwargs)
             y = self._last_demodulated[0] if self._own_delay else curr[0]
             u = self._avg(self._last_demodulated[1], curr[1])
             v = self._avg(self._last_demodulated[2], curr[2])
             if strip_chroma:
-                y = y - self.backend.modulate_yuv(frame, line - 2 * self._own_delay, numpy.zeros(len(composite)), u, v)
+                y = y - self.backend.modulate_components(frame, line - 2 * self._own_delay, numpy.zeros(len(composite)), u, v)
                 if self._notch:
                     y = self._notch(y)
         self._last_frame = frame
@@ -104,13 +107,56 @@ class SimpleCombModem(object):
         self._last_demodulated = curr
         return y, u, v
 
-    def decode_yuv(self, y, u, v):
-        return self.backend.decode_yuv(y, u, v)
+    def encode_components(self, r, g, b):
+        return self.backend.encode_components(r, g, b)
+
+    def decode_components(self, y, u, v):
+        return self.backend.decode_components(y, u, v)
 
     def demodulate(self, *args, **kwargs):
-        return self.backend.decode_yuv(*self.demodulate_yuv(*args, **kwargs))
+        return self.backend.decode_components(*self.demodulate_components(*args, **kwargs))
 
 
 class Simple3DCombModem(SimpleCombModem):
     def __init__(self, backend, notch=0.0, avg=None):
         super(Simple3DCombModem, self).__init__(backend, notch, avg, True)
+
+
+class ColorAveragingModem(object):
+    def __init__(self, backend):
+        self.backend = backend
+        self.modulation_delay = getattr(backend, 'modulation_delay', 0) + 1
+        self.demodulation_delay = getattr(backend, 'demodulation_delay', 0)
+        self._last_modulated_frame = -1
+        self._last_modulated_line = -1
+        self._last_y = None
+        self._last_u = None
+        self._last_v = None
+
+    def modulate_components(self, frame, line, y, u, v):
+        if frame != self._last_modulated_frame or line != self._last_modulated_line + 2 \
+                or self._last_u is None or self._last_v is None:
+            self._last_y = y
+            self._last_u = u
+            self._last_v = v
+        self._last_y, y = y, self._last_y
+        self._last_u, u = u, 0.5 * (u + self._last_u)
+        self._last_v, v = v, 0.5 * (v + self._last_v)
+        self._last_modulated_frame = frame
+        self._last_modulated_line = line
+        return self.backend.modulate_components(frame, line - 2, y, u, v)
+
+    def modulate(self, frame, line, r, g, b):
+        return self.modulate_components(frame, line, *self.backend.encode_components(r, g, b))
+
+    def demodulate_components(self, *args, **kwargs):
+        return self.backend.demodulate_components(*args, **kwargs)
+
+    def demodulate(self, *args, **kwargs):
+        return self.backend.demodulate(*args, **kwargs)
+
+    def encode_components(self, r, g, b):
+        return self.backend.encode_components(r, g, b)
+
+    def decode_components(self, y, u, v):
+        return self.backend.decode_components(y, u, v)

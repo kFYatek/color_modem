@@ -24,7 +24,7 @@ class MacModem(object):
         self._last_chroma = None
 
     @staticmethod
-    def encode_mac_components(r, g, b):
+    def encode_components(r, g, b):
         assert len(r) == len(g) == len(b)
         luma = 0.299 * r + 0.587 * g + 0.114 * b
         dr = 0.649827 * r - 0.544149 * g - 0.105678 * b
@@ -32,14 +32,14 @@ class MacModem(object):
         return luma, dr, db
 
     @staticmethod
-    def decode_mac_components(luma, dr, db):
+    def decode_components(luma, dr, db):
         assert len(luma) == len(dr) == len(db)
         r = luma + 1.0787486515641855 * dr
         g = luma - 0.5494818514781797 * dr - 0.2649492993950324 * db
         b = luma + 1.364256480218281 * db
         return r, g, b
 
-    def modulate_mac_components(self, frame, line, luma, dr, db):
+    def modulate_components(self, frame, line, luma, dr, db):
         if not self._is_alternate_line(frame, line):
             chroma = dr
         else:
@@ -120,31 +120,7 @@ class MacModem(object):
 
         self._last_frame = frame
         self._last_line = line
-        return self.decode_mac_components(luma, dr, db)
+        return self.decode_components(luma, dr, db)
 
     def modulate(self, frame, line, r, g, b):
-        return self.modulate_mac_components(frame, line, *MacModem.encode_mac_components(r, g, b))
-
-
-class AveragingMacModem(MacModem):
-    def __init__(self, *args, **kwargs):
-        super(AveragingMacModem, self).__init__(*args, **kwargs)
-        self.modulation_delay = 1
-        self._last_modulated_frame = -1
-        self._last_modulated_line = -1
-        self._last_y = None
-        self._last_u = None
-        self._last_v = None
-
-    def modulate_mac_components(self, frame, line, y, u, v):
-        if frame != self._last_modulated_frame or line != self._last_modulated_line + 2 \
-                or self._last_u is None or self._last_v is None:
-            self._last_y = y
-            self._last_u = u
-            self._last_v = v
-        self._last_y, y = y, self._last_y
-        self._last_u, u = u, 0.5 * (u + self._last_u)
-        self._last_v, v = v, 0.5 * (v + self._last_v)
-        self._last_modulated_frame = frame
-        self._last_modulated_line = line
-        return super(AveragingMacModem, self).modulate_mac_components(frame, line - 2, y, u, v)
+        return self.modulate_components(frame, line, *MacModem.encode_components(r, g, b))
