@@ -8,6 +8,7 @@ from color_modem.color.mac import MacModem, MacVariant
 from color_modem.color.niir import NiirModem, HueCorrectingNiirModem
 from color_modem.color.ntsc import NtscCombModem, NtscVariant, NtscModem
 from color_modem.color.pal import Pal3DModem, PalVariant, PalDModem, PalSModem
+from color_modem.color.protosecam import ProtoSecamModem, ProtoSecamVariant
 from color_modem.color.secam import SecamModem, SecamVariant
 from color_modem.comb import Simple3DCombModem, SimpleCombModem, ColorAveragingModem
 from color_modem.image import ImageModem
@@ -39,6 +40,8 @@ def main():
     modem = ColorAveragingModem(SecamModem(line_config))
     # basic
     # modem = SecamModem(line_config)
+    # prototype 1957 AM 819-line variant
+    # modem = ColorAveragingModem(ProtoSecamModem(line_config))
 
     #### NIIR (SECAM IV)
     # better quality modulation - hue correction

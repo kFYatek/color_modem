@@ -39,7 +39,9 @@ def iirfilter(N, Wn, rp=None, rs=None, btype='band', ftype='butter', shift=True,
 
 
 def iirdesign(wp, ws, gpass, gstop, ftype='butter', shift=True, phase_shift=False):
-    b, a = scipy.signal.iirdesign(wp, ws, gpass, gstop, ftype=ftype)
+    smallest = numpy.nextafter(0.0, 1.0)
+    largest = numpy.nextafter(1.0, 0.0)
+    b, a = scipy.signal.iirdesign(numpy.maximum(wp, smallest), numpy.minimum(ws, largest), gpass, gstop, ftype=ftype)
     btype = 'band'
     if len(numpy.atleast_1d(wp)) > 1 and len(numpy.atleast_1d(ws)) > 1 and ws[0] > wp[0]:
         btype = 'bandstop'
@@ -47,10 +49,7 @@ def iirdesign(wp, ws, gpass, gstop, ftype='butter', shift=True, phase_shift=Fals
 
 
 def iirdesign_wc(wc, wp, ws, gpass, gstop, ftype='butter', shift=True, phase_shift=False):
-    smallest = numpy.nextafter(0.0, 1.0)
-    largest = numpy.nextafter(1.0, 0.0)
-    return iirdesign([max(wc - wp, smallest), min(wc + wp, largest)], [max(wc - ws, smallest), min(wc + ws, largest)],
-                     gpass, gstop, ftype, shift, phase_shift)
+    return iirdesign([wc - wp, wc + wp], [wc - ws, wc + ws], gpass, gstop, ftype, shift, phase_shift)
 
 
 def iirsplitter(wc, wp, ws, gpass, gstop, ftype='butter', shift=True, pass_phase_shift=False, stop_phase_shift=False):
