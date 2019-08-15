@@ -81,6 +81,20 @@ SecamVariant.SECAM_A = SecamVariant(fsc_dr=2660000.0,
                                     lf_precorrect_f1=0.0,
                                     lf_precorrect_k=1.0)
 
+# Possible variant of FM SECAM I for 819 lines
+SecamVariant.SECAM_E = SecamVariant(fsc_dr=8370000.0,
+                                    fsc_db=8370000.0,
+                                    fdev_dr=250000.0,
+                                    fdev_db=250000.0,
+                                    flimit_minbell=-250000.0,
+                                    flimit_maxbell=250000.0,
+                                    m0=0.2,
+                                    bell_f0=8370000.0,
+                                    bell_kn=1.0,
+                                    bell_kd=1.0,
+                                    lf_precorrect_f1=0.0,
+                                    lf_precorrect_k=1.0)
+
 # SECAM-M allegedly used to be broadcast in Cambodia and Vietnam. Assuming it was based on SECAM III.
 SecamVariant.SECAM_M = SecamVariant(fsc_dr=227.5 * 15750.0 * 1000.0 / 1001.0,
                                     fsc_db=227.5 * 15750.0 * 1000.0 / 1001.0,

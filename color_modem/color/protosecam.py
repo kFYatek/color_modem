@@ -13,6 +13,7 @@ class ProtoSecamVariant(qam.QamConfig):
 # References:
 # - F. Schröter, "Fernsehtechnik: Technik des elektronischen Fernsehens", p. 498-501
 #   https://books.google.pl/books?id=bEL8CAAAQBAJ&pg=PA498
+#   https://books.google.pl/books?id=5hvLBgAAQBAJ&pg=PA502
 # - Wireless World, September 1957, p. 426-429
 #   https://www.americanradiohistory.com/Archive-Wireless-World/50s/Wireless-World-1957-09.pdf
 #
