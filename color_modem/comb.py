@@ -99,7 +99,8 @@ class SimpleCombModem(object):
             u = self._avg(self._last_demodulated[1], curr[1])
             v = self._avg(self._last_demodulated[2], curr[2])
             if strip_chroma:
-                y = y - self.backend.modulate_components(frame, line - 2 * self._own_delay, numpy.zeros(len(composite)), u, v)
+                y = y - self.backend.modulate_components(frame, line - 2 * (self._own_delay - self.modulation_delay),
+                                                         numpy.zeros(len(composite)), u, v)
                 if self._notch:
                     y = self._notch(y)
         self._last_frame = frame

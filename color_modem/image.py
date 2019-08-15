@@ -53,7 +53,7 @@ class ImageModem(object):
                     input_y -= 2
                 output(y, _as_bytes(self.encode_composite_level(
                     self._modem.modulate(frame, y + 2 * modulation_delay, *get_lines(input_y)))))
-        return Image.frombytes('L', (len(output.data) / img.height, img.height), bytes(bytearray(output.data)))
+        return Image.frombytes('L', (len(output.data) // img.height, img.height), bytes(bytearray(output.data)))
 
     def demodulate(self, img, frame=0):
 
@@ -81,4 +81,4 @@ class ImageModem(object):
                     input_y -= 2
                 output(y, *map(_as_bytes, self._modem.demodulate(
                     frame, y + 2 * demodulation_delay, composite[img.width * input_y:img.width * (input_y + 1)])))
-        return Image.frombytes('RGB', (len(output.data) / (3 * img.height), img.height), bytes(bytearray(output.data)))
+        return Image.frombytes('RGB', (len(output.data) // (3 * img.height), img.height), bytes(bytearray(output.data)))
