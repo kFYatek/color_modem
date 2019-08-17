@@ -18,9 +18,7 @@ class NiirModem(utils.ConstantFrequencyCarrier):
                                                           2.0 * config.bandwidth20db / line_config.fs, 3.0, 20.0)
         self._demodulate_resample_factor = 3
 
-        self._demodulate_upsampled_baseband_filter, \
-        self._demodulate_upsampled_filter, \
-        self._demodulate_upsampled_filter_phase_shift = NiirModem._demodulate_am_design(
+        self._demodulate_upsampled_baseband_filter, self._demodulate_upsampled_filter = NiirModem._demodulate_am_design(
             2.0 * config.fsc / line_config.fs, 2.0 * config.bandwidth3db / line_config.fs,
             2.0 * config.bandwidth20db / line_config.fs, 3.0, 20.0, self._demodulate_resample_factor)
 
@@ -91,8 +89,8 @@ class NiirModem(utils.ConstantFrequencyCarrier):
 
     @staticmethod
     def _demodulate_am_design(wc, wp, ws, gpass, gstop, resample_factor):
-        return (utils.iirdesign(wp / resample_factor, ws / resample_factor, gpass, gstop),) + utils.iirdesign_wc(
-            wc / resample_factor, wp / resample_factor, ws / resample_factor, gpass, gstop, phase_shift=True)
+        return utils.iirdesign(wp / resample_factor, ws / resample_factor, gpass, gstop), utils.iirdesign_wc(
+            wc / resample_factor, wp / resample_factor, ws / resample_factor, gpass, gstop)
 
     def demodulate(self, *args, **kwargs):
         return NiirModem.decode_components(*self.demodulate_components(*args, **kwargs))
@@ -153,7 +151,7 @@ class NiirModem(utils.ConstantFrequencyCarrier):
                 phase_shift = 0.0
                 u_signal = -numpy.sqrt(db * db + dr * dr)
                 v_signal = 0.0
-            phase_shift += numpy.pi - self._demodulate_upsampled_filter_phase_shift
+            phase_shift += numpy.pi - self._demodulate_upsampled_filter.phase_shift
             u_signal, v_signal = (u_signal * numpy.cos(phase_shift) - v_signal * numpy.sin(phase_shift)), \
                                  (u_signal * numpy.sin(phase_shift) + v_signal * numpy.cos(phase_shift))
             reconstructed_chroma = u_signal * sincarrier + v_signal * coscarrier

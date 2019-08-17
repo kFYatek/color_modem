@@ -7,8 +7,8 @@ from color_modem import qam, comb, utils
 
 
 class PalVariant(qam.QamConfig):
-    def __new__(cls, fsc, bandwidth20db=4000000.0):
-        return PalVariant.__base__.__new__(cls, fsc, 1300000.0, bandwidth20db)
+    def __new__(cls, fsc, bandwidth3db=1300000.0, bandwidth20db=4000000.0):
+        return PalVariant.__base__.__new__(cls, fsc, bandwidth3db, bandwidth20db)
 
     @property
     def frame_cycle(self):
@@ -175,7 +175,7 @@ class Pal3DModem(PalDModem):
         if avg is not None:
             self._avg = avg
         else:
-            self._avg = lambda a, b: 0.5 * (a + b)
+            self._avg = comb.avg
 
     def demodulate_components(self, frame, line, composite, strip_chroma=True, *args, **kwargs):
         if not (self._use_sin or self._use_cos):

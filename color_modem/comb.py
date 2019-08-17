@@ -6,6 +6,10 @@ import scipy.signal
 from color_modem import utils
 
 
+def avg(val1, val2):
+    return 0.5 * (val1 + val2)
+
+
 def minavg(val1, val2):
     sign = (1.0 - numpy.signbit(val1)) - numpy.signbit(val2)
     return sign * numpy.minimum(numpy.abs(val1), numpy.abs(val2))
@@ -13,7 +17,7 @@ def minavg(val1, val2):
 
 def _notch(qam_modem, q):
     b, a = scipy.signal.iirnotch(2.0 * qam_modem.config.fsc / qam_modem.line_config.fs, q)
-    return lambda x: scipy.signal.lfilter(b, a, x)
+    return utils.FilterFunction(b, a, wp=0.0, btype='bandstop', shift=True)
 
 
 class AbstractCombModem(object):
@@ -77,7 +81,7 @@ class SimpleCombModem(object):
         if avg is not None:
             self._avg = avg
         else:
-            self._avg = lambda a, b: 0.5 * (a + b)
+            self._avg = globals()['avg']
 
         self._notch = None
         if notch:

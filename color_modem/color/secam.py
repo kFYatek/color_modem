@@ -124,6 +124,31 @@ SecamVariant.SECAM_N = SecamVariant(fsc_dr=3578125.0,
                                     lf_precorrect_k=5.6)
 
 
+class FmDecoder(object):
+    def __init__(self, fc, dev, resample_rate=2):
+        self._fc = fc
+        self._resample_rate = resample_rate
+        self._lowpass = utils.iirfilter(6, (2.0 * fc - dev) / resample_rate, rs=48.0, btype='lowpass',
+                                        ftype='cheby2')
+
+    def __call__(self, data):
+        # Assuming the signal is already filtered
+        data_up = scipy.signal.resample_poly(data, up=self._resample_rate, down=1)
+        phase = numpy.linspace(start=0.0, stop=(len(data_up) * numpy.pi * self._fc) / self._resample_rate,
+                               num=len(data_up), endpoint=False)
+        cosine_up = data_up * numpy.cos(phase)
+        sine_up = data_up * numpy.sin(phase)
+        cosine_up = self._lowpass(cosine_up)
+        sine_up = self._lowpass(sine_up)
+        data_up = cosine_up - 1.0j * sine_up
+        # now we have analytic FM at baseband
+        phases_up = numpy.angle(data_up)
+        phases_up = numpy.unwrap(phases_up)
+        phase_shift_up = numpy.diff(numpy.concatenate((phases_up[0:1], phases_up)))
+        frequencies_up = self._fc + self._resample_rate * phase_shift_up / numpy.pi
+        return scipy.signal.resample_poly(frequencies_up, up=1, down=self._resample_rate)
+
+
 class SecamModem(object):
     def __init__(self, line_config, variant=SecamVariant.SECAM, alternate_phases=False):
         self._line_config = line_config
@@ -139,12 +164,17 @@ class SecamModem(object):
             self._start_phase_inversions = [False, False, True, False, False, True]
         else:
             self._start_phase_inversions = [False, False, False, True, True, True]
-        self._chroma_demod_bell = self._chroma_demod_bell_design(self._bell_f0, self._flimit_max,
-                                                                 variant.bell_kn, variant.bell_kd)
+        self._chroma_demod_bell = None
+        if variant.bell_kn != variant.bell_kd:
+            self._chroma_demod_bell = self._chroma_demod_bell_design(self._bell_f0, self._flimit_max,
+                                                                     variant.bell_kn, variant.bell_kd)
         self._chroma_precorrect_lowpass = utils.iirdesign(wp=2.0 * 1300000.0 / line_config.fs,
                                                           ws=2.0 * 3500000.0 / line_config.fs, gpass=3.0, gstop=30.0)
-        self._chroma_precorrect, self._reverse_chroma_precorrect = SecamModem._chroma_precorrect_design(
-            2.0 * variant.lf_precorrect_f1 / line_config.fs, variant.lf_precorrect_k)
+        self._chroma_precorrect = None
+        self._reverse_chroma_precorrect = None
+        if variant.lf_precorrect_k != 1.0:
+            self._chroma_precorrect, self._reverse_chroma_precorrect = SecamModem._chroma_precorrect_design(
+                2.0 * variant.lf_precorrect_f1 / line_config.fs, variant.lf_precorrect_k)
 
         center = 0.5 * (self._flimit_min + self._flimit_max)
         dev = 0.5 * (self._flimit_max - self._flimit_min)
@@ -154,7 +184,7 @@ class SecamModem(object):
                                                            rp=0.1, btype='bandpass', ftype='cheby1')
         self._chroma_demod_luma_filter = utils.iirfilter(3, [center - dev * numpy.e, center + dev * numpy.e],
                                                          btype='bandstop', ftype='bessel')
-        self._chroma_demod = SecamModem._fm_decoder(center, dev)
+        self._chroma_demod = FmDecoder(center, dev)
         self._last_frame = -1
         self._last_line = -1
         self._last_chroma = None
@@ -179,18 +209,16 @@ class SecamModem(object):
 
     @staticmethod
     def _chroma_precorrect_design(wc, k):
-        if k == 1.0:
-            return (lambda x: x), (lambda x: x)
-        else:
-            forward_b, forward_a = scipy.signal.iirfilter(1, k * wc, btype='highpass', ftype='butter')
-            assert forward_a[0] == 1.0
-            forward_b[0] = (k - 1.0) * forward_b[0] + 1.0
-            forward_b[1] = (k - 1.0) * forward_b[1] + forward_a[1]
-            backward_b = numpy.array([1.0, forward_a[1]]) / forward_b[0]
-            backward_a = numpy.array([1.0, forward_b[1] / forward_b[0]])
-            forward = lambda x: scipy.signal.lfilter(forward_b, forward_a, x)
-            backward = lambda x: scipy.signal.lfilter(backward_b, backward_a, x)
-            return forward, backward
+        assert k != 1.0
+        forward_b, forward_a = scipy.signal.iirfilter(1, k * wc, btype='highpass', ftype='butter')
+        assert forward_a[0] == 1.0
+        forward_b[0] = (k - 1.0) * forward_b[0] + 1.0
+        forward_b[1] = (k - 1.0) * forward_b[1] + forward_a[1]
+        backward_b = numpy.array([1.0, forward_a[1]]) / forward_b[0]
+        backward_a = numpy.array([1.0, forward_b[1] / forward_b[0]])
+        forward = utils.FilterFunction(forward_b, forward_a, k * wc, btype='highpass', shift=False)
+        backward = utils.FilterFunction(backward_b, backward_a, k * wc, btype='lowpass', shift=False)
+        return forward, backward
 
     @staticmethod
     def _chroma_demod_bell_design(f0, f_max, kn, kd):
@@ -202,14 +230,12 @@ class SecamModem(object):
         def gain_db(f):
             return 10.0 * numpy.log10(gain(f))
 
-        if kn == kd:
-            return lambda x: x
-        else:
-            wp2 = f0 + 1 / 256.0
-            wp1 = f0 * f0 / wp2
-            ws2 = f_max
-            ws1 = f0 * f0 / ws2
-            return utils.iirdesign([wp1, wp2], [ws1, ws2], -gain_db(wp2), -gain_db(ws2), shift=False)
+        assert kn != kd
+        wp2 = f0 + 1 / 256.0
+        wp1 = f0 * f0 / wp2
+        ws2 = f_max
+        ws1 = f0 * f0 / ws2
+        return utils.iirdesign([wp1, wp2], [ws1, ws2], -gain_db(wp2), -gain_db(ws2), shift=False)
 
     def _modulate_chroma(self, start_phase, frequencies):
         bigF = frequencies / self._bell_f0 - self._bell_f0 / frequencies
@@ -234,39 +260,20 @@ class SecamModem(object):
 
     def modulate_components(self, frame, line, luma, dr, db):
         if not self._line_config.is_alternate_line(frame, line):
-            chroma_frequencies = self._fsc_dr + self._fdev_dr * self._chroma_precorrect(
-                self._chroma_precorrect_lowpass(dr))
+            dr = self._chroma_precorrect_lowpass(dr)
+            if self._chroma_precorrect is not None:
+                dr = self._chroma_precorrect(dr)
+            chroma_frequencies = self._fsc_dr + self._fdev_dr * dr
         else:
-            chroma_frequencies = self._fsc_db + self._fdev_db * self._chroma_precorrect(
-                self._chroma_precorrect_lowpass(db))
+            db = self._chroma_precorrect_lowpass(db)
+            if self._chroma_precorrect is not None:
+                db = self._chroma_precorrect(db)
+            chroma_frequencies = self._fsc_db + self._fdev_db * db
         chroma_frequencies = numpy.minimum(numpy.maximum(chroma_frequencies, self._flimit_min), self._flimit_max)
         start_phase = numpy.pi if self._start_phase_inverted(frame, line) else 0.0
         chroma = self._modulate_chroma(start_phase, chroma_frequencies)
 
         return luma + chroma
-
-    @staticmethod
-    def _fm_decoder(fc, dev, resample_rate=2):
-        lowpass = utils.iirfilter(6, (2.0 * fc - dev) / resample_rate, rs=48.0, btype='lowpass', ftype='cheby2')
-
-        def decode(data):
-            # Assuming the signal is already filtered
-            data_up = scipy.signal.resample_poly(data, up=resample_rate, down=1)
-            phase = numpy.linspace(start=0.0, stop=(len(data_up) * numpy.pi * fc) / resample_rate,
-                                   num=len(data_up), endpoint=False)
-            cosine_up = data_up * numpy.cos(phase)
-            sine_up = data_up * numpy.sin(phase)
-            cosine_up = lowpass(cosine_up)
-            sine_up = lowpass(sine_up)
-            data_up = cosine_up - 1.0j * sine_up
-            # now we have analytic FM at baseband
-            phases_up = numpy.angle(data_up)
-            phases_up = numpy.unwrap(phases_up)
-            phase_shift_up = numpy.diff(numpy.concatenate((phases_up[0:1], phases_up)))
-            frequencies_up = fc + resample_rate * phase_shift_up / numpy.pi
-            return scipy.signal.resample_poly(frequencies_up, up=1, down=resample_rate)
-
-        return decode
 
     def demodulate(self, frame, line, composite):
         if frame != self._last_frame or line != self._last_line + 2 or self._last_chroma is None:
@@ -276,7 +283,8 @@ class SecamModem(object):
         chroma_rest = numpy.flip(composite[1:len(composite) // 40])
         chroma_comp = numpy.concatenate((chroma_rest, composite))
         chroma = self._chroma_demod_chroma_filter(chroma_comp)
-        chroma = self._chroma_demod_bell(chroma)
+        if self._chroma_demod_bell:
+            chroma = self._chroma_demod_bell(chroma)
 
         frequencies = self._chroma_demod(chroma)[-len(composite):]
         frequencies = numpy.minimum(numpy.maximum(frequencies, self._flimit_min), self._flimit_max)
@@ -284,7 +292,8 @@ class SecamModem(object):
             chroma = (frequencies - self._fsc_dr) / self._fdev_dr
         else:
             chroma = (frequencies - self._fsc_db) / self._fdev_db
-        chroma = self._reverse_chroma_precorrect(chroma)
+        if self._reverse_chroma_precorrect is not None:
+            chroma = self._reverse_chroma_precorrect(chroma)
         if not self._line_config.is_alternate_line(frame, line):
             self._last_chroma, dr, db = chroma, chroma, self._last_chroma
         else:

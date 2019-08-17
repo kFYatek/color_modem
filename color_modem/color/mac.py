@@ -14,11 +14,11 @@ MacVariant.D2MAC_7MHZ = MacVariant(720)
 
 class MacModem(object):
     def __init__(self, line_config, variant_or_width=MacVariant.D2MAC_12MHZ):
+        self.line_config = line_config
         try:
             self._width = int(variant_or_width.width)
         except AttributeError:
             self._width = int(variant_or_width)
-        self._is_alternate_line = line_config.is_alternate_line
         self._last_frame = -1
         self._last_line = -1
         self._last_chroma = None
@@ -40,7 +40,7 @@ class MacModem(object):
         return r, g, b
 
     def modulate_components(self, frame, line, luma, dr, db):
-        if not self._is_alternate_line(frame, line):
+        if not self.line_config.is_alternate_line(frame, line):
             chroma = dr
         else:
             chroma = db
@@ -111,7 +111,7 @@ class MacModem(object):
 
         chroma = scipy.signal.resample_poly(chroma, up=2, down=1) - 0.5
 
-        if not self._is_alternate_line(frame, line):
+        if not self.line_config.is_alternate_line(frame, line):
             dr = chroma
             self._last_chroma, db = dr, self._last_chroma
         else:
