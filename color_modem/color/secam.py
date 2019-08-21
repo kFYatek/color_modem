@@ -111,7 +111,7 @@ SecamVariant.SECAM_M = SecamVariant(fsc_dr=227.5 * 15750.0 * 1000.0 / 1001.0,
 
 # CCIR documents mention SECAM-N alongside SECAM-M. Most likely it was similar to SECAM-M.
 SecamVariant.SECAM_N = SecamVariant(fsc_dr=3578125.0,
-                                    fsc_db=3578125,
+                                    fsc_db=3578125.0,
                                     fdev_dr=230000.0,
                                     fdev_db=230000.0,
                                     flimit_minbell=-500000.0,

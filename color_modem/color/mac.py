@@ -56,7 +56,6 @@ class MacModem(object):
 
         chroma += 0.5
         output = 0.5 * numpy.ones(1080)
-        # output[15:18] = attenuated_chroma
         output[15] = 0.4375 + 0.125 * chroma[2]
         output[16] = 0.25 + 0.5 * chroma[3]
         output[17] = 0.0625 + 0.875 * chroma[4]

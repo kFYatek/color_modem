@@ -17,7 +17,7 @@ class ProtoSecamVariant(qam.QamConfig):
 # - Wireless World, September 1957, p. 426-429
 #   https://www.americanradiohistory.com/Archive-Wireless-World/50s/Wireless-World-1957-09.pdf
 #
-# Both those sources mention 8.57 MHz as the subcarrier frequency, but also mention that it's an odd multiple of half
+# Both those sources mention 8.37 MHz as the subcarrier frequency, but also mention that it's an odd multiple of half
 # the line frequency. The line frequency of the 819-line system is 20475 Hz, and odd multiples of 10237.5 Hz nearest to
 # 8.37 MHz are 8364037.5 Hz (817 * 10237.5 Hz) and 8384512.5 Hz (819 * 10237.5 Hz). Neither can be sensibly rounded to
 # 8.37 MHz. Weird. Going with 8384512.5 Hz, because 819 = 3 * 3 * 7 * 13, while 817 is a prime number, and large prime

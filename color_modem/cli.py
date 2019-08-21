@@ -36,7 +36,7 @@ def main():
     # modem = PalSModem(line_config)
 
     #### SECAM
-    # better quality modulation - filers out unrepresentable color patterns
+    # better quality modulation - filters out unrepresentable color patterns
     modem = ColorAveragingModem(SecamModem(line_config))
     # basic
     # modem = SecamModem(line_config)
@@ -52,7 +52,7 @@ def main():
     # modem = SimpleCombModem(HueCorrectingNiirModem(line_config))
 
     #### D2-MAC
-    # better quality modulation - filers out unrepresentable color patterns
+    # better quality modulation - filters out unrepresentable color patterns
     # modem = ColorAveragingModem(MacModem(line_config))
     # basic
     # modem = MacModem(line_config)
